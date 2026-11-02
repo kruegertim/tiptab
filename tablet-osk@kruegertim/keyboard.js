@@ -17,12 +17,12 @@ import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
-import Meta from 'gi://Meta';
 import Pango from 'gi://Pango';
 import St from 'gi://St';
 
 import {getLayout, TOTAL_UNITS, FALLBACK_KEYVALS} from './layouts.js';
 import {KeyInjector} from './injector.js';
+import {isWaylandCompositor} from './compat.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 const REPEAT_DELAY_MS = 500;
@@ -825,7 +825,7 @@ export const OskKeyboard = GObject.registerClass({
         const isTouch = type === T.TOUCH_BEGIN || type === T.TOUCH_UPDATE ||
             type === T.TOUCH_END || type === T.TOUCH_CANCEL;
         // On X11 touch is emulated as pointer events, which we handle instead.
-        if (isTouch && !Meta.is_wayland_compositor())
+        if (isTouch && !isWaylandCompositor())
             return Clutter.EVENT_PROPAGATE;
 
         switch (type) {

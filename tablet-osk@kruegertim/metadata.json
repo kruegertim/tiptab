@@ -2,7 +2,7 @@
   "uuid": "tablet-osk@kruegertim",
   "name": "Tablet OSK",
   "description": "Full on-screen keyboard (ThinkPad-like layout with F-row, Fn layer, arrows, Pos1/Ende/Bild) for touch tablets. Auto-show on text focus, swipe gestures, top-bar toggle, optional work-area shrinking.",
-  "shell-version": ["46"],
+  "shell-version": ["46", "47", "48", "49", "50"],
   "settings-schema": "org.gnome.shell.extensions.tablet-osk",
   "url": "https://github.com/kruegertim/tiptab",
   "version": 1

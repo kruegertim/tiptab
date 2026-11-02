@@ -27,6 +27,8 @@ import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
+import {chromeParams} from './compat.js';
+
 const LOG_PREFIX = '[tablet-osk]';
 
 const HIDE_DELAY_MS = 400;     // focus-out debounce: Tab / tapping another field keeps the keyboard
@@ -48,58 +50,93 @@ function monitorRectAt(x, y) {
     return global.display.get_monitor_geometry(index);
 }
 
-// Touch-only swipe up from the bottom edge (modelled on the shell's EdgeDragAction).
-const BottomSwipeAction = GObject.registerClass({
-    Signals: {'activated': {}},
-}, class TabletOskBottomSwipeAction extends Clutter.GestureAction {
-    _init(canStart) {
-        super._init();
-        this._canStart = canStart;
-        this.set_n_touch_points(1);
-        this.set_threshold_trigger_edge(Clutter.GestureTriggerEdge.AFTER);
-    }
+// Touch swipe up from the bottom edge.
+//  - GNOME >= 49: Shell.EdgeDragGesture (the new Clutter.Gesture framework, used by the
+//    shell's own OSK). Clutter.GestureAction/GestureTriggerEdge no longer exist there.
+//  - GNOME 46-48: legacy Clutter.GestureAction subclass (modelled on EdgeDragAction).
+// Both are Clutter.Actions with an 'enabled' property, added to global.stage.
+let _LegacyBottomSwipeAction = null;
 
-    vfunc_gesture_prepare(_actor) {
-        if (this.get_n_current_points() === 0)
-            return false;
-        // Pointer events have no sequence: mouse is handled by the bottom strip.
-        if (!this.get_sequence(0))
-            return false;
-        if (!(allowedModes() & Main.actionMode))
-            return false;
-        if (!this._canStart())
-            return false;
-
-        const [x, y] = this.get_press_coords(0);
-        const rect = monitorRectAt(x, y);
-        return y > rect.y + rect.height - TOUCH_EDGE;
-    }
-
-    vfunc_gesture_progress(_actor) {
-        const [startX, startY] = this.get_press_coords(0);
-        const [x, y] = this.get_motion_coords(0);
-        const offsetX = Math.abs(x - startX);
-        const offsetY = Math.abs(y - startY);
-
-        if (offsetX < TOUCH_EDGE && offsetY < TOUCH_EDGE)
-            return true;
-
-        if (offsetX > offsetY) {
-            this.cancel();
-            return false;
+function _legacyBottomSwipeClass() {
+    if (_LegacyBottomSwipeAction)
+        return _LegacyBottomSwipeAction;
+    // Defined lazily: `extends Clutter.GestureAction` throws at module load on GNOME >= 49.
+    _LegacyBottomSwipeAction = GObject.registerClass({
+        Signals: {'activated': {}},
+    }, class TabletOskBottomSwipeAction extends Clutter.GestureAction {
+        _init(canStart) {
+            super._init();
+            this._canStart = canStart;
+            this.set_n_touch_points(1);
+            this.set_threshold_trigger_edge(Clutter.GestureTriggerEdge.AFTER);
         }
-        return true;
-    }
 
-    vfunc_gesture_end(_actor) {
-        const [, startY] = this.get_press_coords(0);
-        const [, y] = this.get_motion_coords(0);
-        if (startY - y > TOUCH_DISTANCE)
-            this.emit('activated');
-        else
-            this.cancel();
+        vfunc_gesture_prepare(_actor) {
+            if (this.get_n_current_points() === 0)
+                return false;
+            // Pointer events have no sequence: mouse is handled by the bottom strip.
+            if (!this.get_sequence(0))
+                return false;
+            if (!(allowedModes() & Main.actionMode))
+                return false;
+            if (!this._canStart())
+                return false;
+
+            const [x, y] = this.get_press_coords(0);
+            const rect = monitorRectAt(x, y);
+            return y > rect.y + rect.height - TOUCH_EDGE;
+        }
+
+        vfunc_gesture_progress(_actor) {
+            const [startX, startY] = this.get_press_coords(0);
+            const [x, y] = this.get_motion_coords(0);
+            const offsetX = Math.abs(x - startX);
+            const offsetY = Math.abs(y - startY);
+
+            if (offsetX < TOUCH_EDGE && offsetY < TOUCH_EDGE)
+                return true;
+
+            if (offsetX > offsetY) {
+                this.cancel();
+                return false;
+            }
+            return true;
+        }
+
+        vfunc_gesture_end(_actor) {
+            const [, startY] = this.get_press_coords(0);
+            const [, y] = this.get_motion_coords(0);
+            if (startY - y > TOUCH_DISTANCE)
+                this.emit('activated');
+            else
+                this.cancel();
+        }
+    });
+    return _LegacyBottomSwipeAction;
+}
+
+// Returns {actor, phase, onActivated(cb)}; cb runs when a swipe-up completes.
+function createBottomSwipe(canStart) {
+    if (typeof Shell.EdgeDragGesture === 'function') {
+        const gesture = new Shell.EdgeDragGesture({
+            name: 'tablet-osk bottom swipe',
+            side: St.Side.BOTTOM,
+        });
+        gesture.connect('may-recognize', () =>
+            !!(allowedModes() & Main.actionMode) && !!canStart());
+        return {
+            actor: gesture,
+            phase: null,
+            onActivated: cb => gesture.connect('end', cb),
+        };
     }
-});
+    const action = new (_legacyBottomSwipeClass())(canStart);
+    return {
+        actor: action,
+        phase: Clutter.EventPhase.CAPTURE,
+        onActivated: cb => action.connect('activated', cb),
+    };
+}
 
 // Press + vertical drag recogniser for a single actor (mouse and optionally touch),
 // using a stage grab while the drag is in progress. A plain tap does nothing.
@@ -275,11 +312,14 @@ export class VisibilityController {
         }
 
         // Touch: swipe up from the bottom edge (stage, capture phase)
-        this._swipeAction = new BottomSwipeAction(
+        const swipe = createBottomSwipe(
             () => this._swipeEnabled() && !this._safeIsVisible());
-        this._swipeAction.connect('activated', () => this.manualShow());
-        global.stage.add_action_full(SWIPE_ACTION_NAME, Clutter.EventPhase.CAPTURE,
-            this._swipeAction);
+        swipe.onActivated(() => this.manualShow());
+        this._swipeAction = swipe.actor;
+        if (swipe.phase !== null)
+            global.stage.add_action_full(SWIPE_ACTION_NAME, swipe.phase, this._swipeAction);
+        else
+            global.stage.add_action(this._swipeAction);
 
         // Mouse: thin reactive strip at the bottom edge of the primary monitor
         this._strip = new St.Widget({
@@ -287,7 +327,7 @@ export class VisibilityController {
             reactive: true,
             track_hover: false,
         });
-        Main.layoutManager.addTopChrome(this._strip, {affectsInputRegion: true});
+        Main.layoutManager.addTopChrome(this._strip, chromeParams({affectsInputRegion: true}));
         this._stripDrag = new DragRecognizer({
             direction: -1,
             touch: false,

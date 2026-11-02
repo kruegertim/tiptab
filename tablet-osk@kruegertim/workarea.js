@@ -32,6 +32,8 @@ import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+
+import {chromeParams} from './compat.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const DC_NAME = 'org.gnome.Mutter.DisplayConfig';
@@ -237,11 +239,11 @@ export class WorkArea {
 
         // Above windows (below popup menus / top_window_group), receives input,
         // never reserves space itself.
-        Main.layoutManager.addChrome(actor, {
+        Main.layoutManager.addChrome(actor, chromeParams({
             affectsStruts: false,
             affectsInputRegion: true,
             trackFullscreen: false,
-        });
+        }));
 
         // Invisible proxy that mirrors the container's allocation (ignores
         // translation), used for the strut only. Must stay visible=true so it
@@ -284,11 +286,11 @@ export class WorkArea {
             return;
 
         if (want) {
-            Main.layoutManager.trackChrome(this._strut, {
+            Main.layoutManager.trackChrome(this._strut, chromeParams({
                 affectsStruts: true,
                 affectsInputRegion: false,
                 trackFullscreen: false,
-            });
+            }));
         } else {
             Main.layoutManager.untrackChrome(this._strut);
         }

@@ -158,11 +158,21 @@ export default class TabletOskExtension extends Extension {
                 this.emit('visibility-changed');
             }
         };
+        // KeyboardManager connects its signal handlers with this._syncEnabled.bind(this),
+        // i.e. to the original method, so the override above only covers direct calls.
+        // The original looks _lastDeviceIsTouchscreen() up on the instance, so shadowing
+        // it keeps touch input from auto-creating the built-in keyboard.
+        this._origLastDeviceIsTouchscreen = Object.hasOwn(km, '_lastDeviceIsTouchscreen')
+            ? km._lastDeviceIsTouchscreen : null;
+        km._lastDeviceIsTouchscreen = () => false;
         km._syncEnabled();
-        if (km._bottomDragAction) {
-            this._origDragEnabled = km._bottomDragAction.enabled;
-            km._bottomDragAction.enabled = false;
-            this._dragNotifyId = km._bottomDragAction.connect('notify::enabled', a => {
+        // GNOME 46-48: _bottomDragAction (Clutter.GestureAction); GNOME 49+: _bottomDragGesture
+        // (Shell.EdgeDragGesture). Keep it disabled so it doesn't compete with our swipe.
+        this._builtinDrag = km._bottomDragGesture ?? km._bottomDragAction ?? null;
+        if (this._builtinDrag) {
+            this._origDragEnabled = this._builtinDrag.enabled;
+            this._builtinDrag.enabled = false;
+            this._dragNotifyId = this._builtinDrag.connect('notify::enabled', a => {
                 if (a.enabled)
                     a.enabled = false;
             });
@@ -173,12 +183,18 @@ export default class TabletOskExtension extends Extension {
         const km = Main.keyboard;
         if (!km || !this._origSyncEnabled)
             return;
-        if (km._bottomDragAction) {
+        if (this._builtinDrag) {
             if (this._dragNotifyId)
-                km._bottomDragAction.disconnect(this._dragNotifyId);
-            km._bottomDragAction.enabled = this._origDragEnabled ?? true;
+                this._builtinDrag.disconnect(this._dragNotifyId);
+            this._builtinDrag.enabled = this._origDragEnabled ?? true;
         }
+        this._builtinDrag = null;
         this._dragNotifyId = 0;
+        if (this._origLastDeviceIsTouchscreen)
+            km._lastDeviceIsTouchscreen = this._origLastDeviceIsTouchscreen;
+        else
+            delete km._lastDeviceIsTouchscreen;
+        this._origLastDeviceIsTouchscreen = null;
         km._syncEnabled = this._origSyncEnabled;
         this._origSyncEnabled = null;
         km._syncEnabled();
@@ -313,6 +329,9 @@ export default class TabletOskExtension extends Extension {
             c.opacity = 0;
             c.show();
             this._raise();
+            // WorkArea ignores this while floating, but needs it to reserve space
+            // if the mode is switched to docked while the keyboard is shown.
+            this._workArea.setShown(true);
             c.ease({
                 opacity: Math.round(255 * this._settings.get_double('floating-opacity')),
                 duration: ANIMATION_TIME,
