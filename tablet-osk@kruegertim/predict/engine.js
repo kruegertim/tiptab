@@ -6,6 +6,10 @@
 //   engine.suggest('Hal', 'ich')      -> 3 slots [alt, BEST, alt] (entries may be null)
 //   engine.autocorrect('Hallp')       -> {replacement: 'Hallo', confidence: 0.97, original: 'Hallp'}
 //   engine.nextKeyProbs('hall')       -> Map('o' => 0.8, ...)
+//   engine.autocorrect('Maedchen')    -> {replacement: 'Mädchen', ...}   (ae/oe/ue/ss spelling)
+//   engine.autocorrect('haus')        -> {replacement: 'Haus', kind: 'case', ...} (German noun)
+//   engine.autocorrect('das', null)   -> {replacement: 'Das', kind: 'case', ...}  (sentence start,
+//                                        only while autoCapitalize is on — see setAutoCapitalize)
 //
 // The contract form `new PredictionEngine({lexicon, bigrams, userDict})` works too
 // (lexicon = Lexicon instance from loader.js, bigrams = Bigrams instance).
@@ -53,13 +57,52 @@ const COST = {
     TRANSPOSE: 2.5,
     INS_NEAR: 3.0,      // extra key typed, neighbour of an adjacent letter or doubled
     INS_FAR: 5.0,
-    DEL: 3.8,           // letter missed
+    INS_DOUBLE: 2.6,    // letter doubled by mistake (Rhythmuss, wiederrum)
+    INS_H: 2.6,         // German: "h" after a vowel (nähmlich, ziehmlich)
+    DEL: 3.2,           // letter missed
     DEL_DOUBLE: 2.4,    // one of a double letter missed (halo -> hallo)
+    SUB_VOWEL: 5.5,     // vowel for vowel (spelling: seperat -> separat, definately)
+    UMLAUT_DIGRAPH: 0.5, // "ae"/"oe"/"ue" typed for ä/ö/ü (no umlaut keys, Swiss/ASCII habit)
+    SS_ESZETT: 0.9,     // "ss" typed for ß (Strasse -> Straße)
 };
 const SPECIAL_PAIRS = new Set(['aä', 'äa', 'oö', 'öo', 'uü', 'üu', 'sß', 'ßs']);
+const VOWELS = new Set([...'aeiouyäöü'].map(c => c.charCodeAt(0)));
+// typed digraph (two char codes) -> the single letter it stands for
+const DIGRAPHS = new Map([['ae', 'ä'], ['oe', 'ö'], ['ue', 'ü'], ['ss', 'ß']].map(
+    ([d, u]) => [d.charCodeAt(0) * 65536 + d.charCodeAt(1), u.charCodeAt(0)]));
+const DIGRAPH_RE = /ae|oe|ue|ss/g;
+const MAX_UMLAUT_VARIANTS = 16;
+
+// Fixed whole-word replacements: missing apostrophes and words that are really two
+// words.  Applied before the dictionary check, because some of them are rare valid
+// words ("cant", "wont") that people practically never mean.
+const FIXES = {
+    en: {
+        im: "I'm", ive: "I've", youre: "you're", youve: "you've", youll: "you'll",
+        theyre: "they're", theyve: "they've", theyll: "they'll", weve: "we've",
+        cant: "can't", wont: "won't", dont: "don't", didnt: "didn't", doesnt: "doesn't",
+        isnt: "isn't", wasnt: "wasn't", arent: "aren't", werent: "weren't",
+        hasnt: "hasn't", havent: "haven't", hadnt: "hadn't", couldnt: "couldn't",
+        wouldnt: "wouldn't", shouldnt: "shouldn't", mustnt: "mustn't", neednt: "needn't",
+        whats: "what's", thats: "that's", theres: "there's", heres: "here's",
+        wheres: "where's", whos: "who's", hows: "how's", itll: "it'll",
+        couldve: "could've", wouldve: "would've", shouldve: "should've",
+        shes: "she's", hes: "he's", alot: 'a lot', infront: 'in front', aswell: 'as well',
+    },
+    de: {
+        garnicht: 'gar nicht', garkein: 'gar kein', garkeine: 'gar keine', garnichts: 'gar nichts',
+        vorallem: 'vor allem', aufjedenfall: 'auf jeden Fall', ausversehen: 'aus Versehen',
+        bisjetzt: 'bis jetzt', aufeinmal: 'auf einmal', zuende: 'zu Ende', imoment: 'im Moment',
+        bisbald: 'bis bald', bismorgen: 'bis morgen', vielspaß: 'viel Spaß', vielspass: 'viel Spaß',
+        tschuess: 'tschüss',
+    },
+};
 
 // log prior of "the user meant exactly this unknown string" (names, slang, compounds)
 const LITERAL_LOGP = -14.5;
+const LITERAL_PER_LETTER = 0.15;     // longer unknown strings are less likely meant literally
+const COMPOUND_LITERAL_BONUS = 3.0;  // unknown string that splits into two words (German compounds)
+const CAPITAL_LITERAL_BONUS = 1.5;   // unknown Capitalised word: often a name ("Kevin" -> not "Kein")
 const EXACT_BONUS = Math.log(2.0);
 const BIGRAM_LAMBDA = 0.5;
 // search two-edit candidates only if the best one-edit candidate scores below this
@@ -72,6 +115,11 @@ const SEARCH_BUDGET = 6000;     // max trie nodes visited per search pass
 // ---------------------------------------------------------------- text helpers
 
 const LETTER_RE = /^[\p{L}][\p{L}'’-]*$/u;
+
+/** first letter upper case (Unicode aware for ä/ö/ü) */
+function capitalize(w) {
+    return w.charAt(0).toUpperCase() + w.slice(1);
+}
 const UPPER_RE = /\p{Lu}/u;
 const LOWER_RE = /\p{Ll}/u;
 
@@ -278,8 +326,9 @@ export class PredictionEngine {
      * @param {MemoryUserDict} [o.userDict]
      */
     constructor({lexicon = null, bigrams = null, userDict = null, loader = null,
-        lang = null, layout = 'qwertz'} = {}) {
+        lang = null, layout = 'qwertz', autoCapitalize = false} = {}) {
         this._loader = loader;
+        this.autoCapitalize = !!autoCapitalize;
         this.userDict = userDict ?? new MemoryUserDict();
         this.lang = lang ?? lexicon?.lang ?? 'de';
         this.lexicon = lexicon;
@@ -287,6 +336,17 @@ export class PredictionEngine {
         if (!this.lexicon && loader)
             this.setLanguage(this.lang);
         this.setLayout(layout);
+    }
+
+    /**
+     * Sentence-start capitalisation (default off): when on, a word typed in lower case at the start of a
+     * sentence (prevWord null/'' or ending in . ! ?) is capitalised by autocorrect() and in
+     * suggest().  Turn it off for fields whose content hints ask for lower case or where
+     * capitals make no sense (URL, e-mail, user names) and when the caller does not know
+     * the text before the cursor (prevWord null would then be a guess).
+     */
+    setAutoCapitalize(on) {
+        this.autoCapitalize = !!on;
     }
 
     /** 'qwertz' | 'qwerty' — used for the keyboard-adjacency error model */
@@ -369,7 +429,7 @@ export class PredictionEngine {
             return COST.SUB_SPECIAL;
         const d = this._adj.get(a)?.get(b);
         if (d === undefined)
-            return COST.SUB_FAR;
+            return VOWELS.has(a) && VOWELS.has(b) ? COST.SUB_VOWEL : COST.SUB_FAR;
         return d <= 1.1 ? COST.SUB_NEAR : COST.SUB_DIAG;
     }
 
@@ -397,8 +457,13 @@ export class PredictionEngine {
         for (let j = 0; j < m; j++)
             wc.push(w.charCodeAt(j));
         D[0][0] = 0;
+        const de = this.lang === 'de';
         const insCost = i => { // typed qc[i] is extra
             const prev = i > 0 ? qc[i - 1] : -1, next = i + 1 < n ? qc[i + 1] : -1;
+            if (qc[i] === prev || qc[i] === next)
+                return COST.INS_DOUBLE;
+            if (de && qc[i] === 104 /* h */ && VOWELS.has(prev))
+                return COST.INS_H;
             return (this._isNear(qc[i], prev) || this._isNear(qc[i], next)) ? COST.INS_NEAR : COST.INS_FAR;
         };
         const delCost = j => (j > 0 && wc[j] === wc[j - 1]) || (j + 1 < m && wc[j] === wc[j + 1])
@@ -419,6 +484,11 @@ export class PredictionEngine {
                 if (i > 1 && j > 1 && qc[i - 1] === wc[j - 2] && qc[i - 2] === wc[j - 1] &&
                     qc[i - 1] !== qc[i - 2]) {
                     const t = D[i - 2][j - 2] + COST.TRANSPOSE;
+                    if (t < v)
+                        v = t;
+                }
+                if (i > 1 && DIGRAPHS.get(qc[i - 2] * 65536 + qc[i - 1]) === wc[j - 1]) {
+                    const t = D[i - 2][j - 1] + (wc[j - 1] === 0xdf ? COST.SS_ESZETT : COST.UMLAUT_DIGRAPH);
                     if (t < v)
                         v = t;
                 }
@@ -516,6 +586,43 @@ export class PredictionEngine {
         return visits <= budget;
     }
 
+    /**
+     * Spellings of q with ae/oe/ue/ss replaced by ä/ö/ü/ß (German only), q itself excluded.
+     * "muessen" -> ["müssen"], "strasse" -> ["straße"]; at most MAX_UMLAUT_VARIANTS.
+     */
+    _umlautVariants(q) {
+        if (this.lang !== 'de' || q.length < 3)
+            return [];
+        const pos = [];
+        DIGRAPH_RE.lastIndex = 0;
+        let m;
+        while ((m = DIGRAPH_RE.exec(q)) !== null) {
+            pos.push(m.index);
+            DIGRAPH_RE.lastIndex = m.index + 1;   // overlapping: "sss", "uee"
+        }
+        if (!pos.length)
+            return [];
+        const out = new Set();
+        const n = Math.min(pos.length, 4);
+        for (let mask = 1; mask < (1 << n) && out.size < MAX_UMLAUT_VARIANTS; mask++) {
+            let v = '', last = 0, ok = true;
+            for (let b = 0; b < n; b++) {
+                if (!(mask & (1 << b)))
+                    continue;
+                const p = pos[b];
+                if (p < last) {      // overlaps the previous replacement
+                    ok = false;
+                    break;
+                }
+                v += q.slice(last, p) + String.fromCharCode(DIGRAPHS.get(q.charCodeAt(p) * 65536 + q.charCodeAt(p + 1)));
+                last = p + 2;
+            }
+            if (ok)
+                out.add(v + q.slice(last));
+        }
+        return [...out];
+    }
+
     _maxEdits(len) {
         if (len <= 2 || len > MAX_FUZZY_LEN)
             return 0;
@@ -529,11 +636,14 @@ export class PredictionEngine {
         const key = normKey(word);
         if (!this.lexicon)
             return false;
+        return this._isDictWord(key) || (this.lang === 'de' && this._isCompound(key));
+    }
+
+    /** in lexicon, dictionary (bloom) or learned — without the compound heuristic */
+    _isDictWord(key) {
         if (this.lexicon.isValid(key))
             return true;
         if (this.userDict.isLearned(this.lang, key))
-            return true;
-        if (this.lang === 'de' && this._isCompound(key))
             return true;
         if (this.lang === 'en' && key.endsWith("'s") && this.lexicon.isValid(key.slice(0, -2)))
             return true;
@@ -607,6 +717,17 @@ export class PredictionEngine {
                         words.add(i);
                 }, null);
         }
+        // ae/oe/ue/ss spellings of umlauts and ß: exact words and completions
+        for (const v of this._umlautVariants(q)) {
+            const i = lex.indexOf(v);
+            if (i >= 0)
+                words.add(i);
+            if (q.length >= 3) {
+                const [a, b] = lex.range(v);
+                if (b > a && !(b - a === 1 && i >= 0))
+                    prefixNodes.push([a, b, true]);
+            }
+        }
         const res = {words: [...words], prefixNodes};
         this._memo = {q, lex: this.lexicon, res};
         return res;
@@ -647,30 +768,59 @@ export class PredictionEngine {
         if (!this.lexicon || typeof word !== 'string')
             return null;
         if (this.lang === 'en' && word === 'i')   // the one case-only fix iOS also does
-            return {replacement: 'I', confidence: 0.99, original: word};
-        if (word.length < 3 || word.length > 24 || isProtectedToken(word) || word.includes('-'))
+            return {replacement: 'I', confidence: 0.99, original: word, kind: 'case'};
+        if (word.length < 2 || word.length > 24 || isProtectedToken(word) || word.includes('-'))
             return null;
         const pattern = casePattern(word);
         if (pattern === 'mixed')
             return null;
         const q = normKey(word);
-        if (this.isKnownWord(q) || this.userDict.isBlocked(this.lang, q))
+        if (this.userDict.isBlocked(this.lang, q) || this.userDict.isLearned(this.lang, q))
             return null;
         const ctx = contextOf(prevWord);
+        // sentence start: capitalise the result when the user typed lower case
+        const capStart = this.autoCapitalize && ctx.sentenceStart && pattern === 'lower';
+        const finish = (replacement, confidence, kind) => {
+            if (capStart)
+                replacement = capitalize(replacement);
+            return replacement === word ? null : {replacement, confidence, original: word, kind};
+        };
+        const fix = FIXES[this.lang]?.[q];
+        if (fix && pattern !== 'upper')
+            return finish(applyCase(word, fix), 0.95, 'phrase');
+        if (word.length < 3 && !capStart)
+            return null;
+        // a German string that only splits into two words ("wiederrum" = wieder+rum) is
+        // probably a compound, but may still be a typo of a frequent word: correct it only
+        // with a much stronger candidate
+        const compoundOnly = !this._isDictWord(q) && this.lang === 'de' && this._isCompound(q);
+        if (!compoundOnly && this.isKnownWord(q)) {
+            // valid word: only its capitalisation can be wrong
+            if (pattern !== 'lower')
+                return null;
+            const i = this.lexicon.indexOf(q);
+            if (this.lexicon.isCapitalOnly(i))
+                return finish(this.lexicon.words[i], 0.95, 'case');
+            return capStart ? finish(word, 0.9, 'case') : null;
+        }
+        if (word.length < 3)
+            return null;
         const cands = this._corrections(q, ctx.key, this._maxEdits(q.length));
         if (!cands.length)
             return null;
         // posterior over candidates + "user meant the literal string"
-        const lit = LITERAL_LOGP - 0.15 * Math.max(0, q.length - 6);
+        const lit = LITERAL_LOGP - LITERAL_PER_LETTER * Math.max(0, q.length - 6) +
+            (compoundOnly ? COMPOUND_LITERAL_BONUS : 0) +
+            (pattern === 'capital' && !ctx.sentenceStart && !/^\p{Lu}/u.test(cands[0].word) ? CAPITAL_LITERAL_BONUS : 0);
         const best = cands[0].score;
         let z = Math.exp(lit - best);
         for (const c of cands)
             z += Math.exp(c.score - best);
         const confidence = 1 / z;
-        const threshold = q.length <= 3 ? 0.8 : 0.6;
+        const threshold = compoundOnly ? 0.9 : q.length <= 3 ? 0.8 : 0.6;
         if (confidence < threshold)
             return null;
-        return {replacement: applyCase(word, cands[0].word), confidence, original: word};
+        return finish(applyCase(word, cands[0].word), confidence, 'typo');
     }
 
     /**
@@ -743,10 +893,12 @@ export class PredictionEngine {
                 const err = this.errorCost(q, key) + knownPenalty;
                 add(key, lex.words[i], this._ctxLogP(ctx, key, lex.logp[i]) - err, 'correction');
             }
-            for (const [a, b] of found.prefixNodes) {
+            for (const [a, b, umlaut] of found.prefixNodes) {
                 for (const i of lex.topK(a, b, 2)) {
                     const key = lex.keys[i];
-                    if (cands.has(key))
+                    // (umlaut spellings may improve a whole-word candidate's score:
+                    // "schoe" -> "schön" scores as a completion, not as a 1-letter word)
+                    if (umlaut ? cands.get(key)?.kind === 'completion' : cands.has(key))
                         continue;
                     const err = this.errorCost(q, key, true) + knownPenalty;
                     add(key, lex.words[i], this._ctxLogP(ctx, key, lex.logp[i]) - err, 'correction');
@@ -756,8 +908,10 @@ export class PredictionEngine {
 
         const ac = this.autocorrect(prefix, prevWord);
         const ranked = [...cands.values()].sort((a, b) => b.score - a.score);
-        const toItem = c => ({word: applyCase(prefix, c.word), score: c.score, kind: c.kind,
-            exact: c.exact});
+        const capStart = this.autoCapitalize && casePattern(prefix) === 'lower' &&
+            contextOf(prevWord).sentenceStart;
+        const toItem = c => ({word: capStart ? capitalize(applyCase(prefix, c.word)) : applyCase(prefix, c.word),
+            score: c.score, kind: c.kind, exact: c.exact});
 
         const order = [];
         let first;

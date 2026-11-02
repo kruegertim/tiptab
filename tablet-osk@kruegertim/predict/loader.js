@@ -2,13 +2,17 @@
 // indexes used by engine.js.  Pure ES module (no gi imports): the caller passes
 // a readFile(path) function (GLib.file_get_contents in the shell, fs in node).
 //
-// Data format (written by ~/osk/tools/build_predict_data.py):
-//   { v: 1, lang, n,
+// Data format (written by tools/build_predict_data.py):
+//   { v: 2, lang, n,
 //     words:   [canonical spelling, ...]  sorted by lower-case key (UTF-16 code unit order)
 //     f:       [round(16*ln(count)), ...] parallel to words
+//     amb:     [index, ...]               capitalised words whose lower-case form is also a
+//                                         word ("Essen"/"essen"): case is not forced for them
 //     bigrams: { ctxLower: [total, next1, count1, next2, count2, ...], '<s>': sentence start }
+//              v2: next = index into words; v1: next = lower-case key string
 //     bloom:   { m, k, b: base64 }        all dictionary words (lower case), FNV-1a double hashing
 //   }
+// Version 1 files (no amb, successor strings) are still accepted.
 //
 // The lexicon is an *implicit trie*: because the keys are sorted, every trie
 // node is a contiguous index range [lo, hi) at some depth; children are found
@@ -106,7 +110,7 @@ export class BloomFilter {
 }
 
 export class Lexicon {
-    constructor({words, f, bloom = null, lang = '?'}) {
+    constructor({words, f, bloom = null, lang = '?', amb = null}) {
         const n = words.length;
         this.lang = lang;
         this.size = n;
@@ -131,6 +135,7 @@ export class Lexicon {
         for (let i = 0; i < n; i++)
             this.logp[i] = f[i] / 16 - lt;
         this.bloom = bloom ? new BloomFilter(bloom) : null;
+        this._amb = amb ? new Set(amb) : null;
         this._sparse = null;
         this._letterProbs = null;
         this._top = null;
@@ -179,6 +184,26 @@ export class Lexicon {
     /** dictionary validity: in lexicon or in the (larger) dictionary bloom filter */
     isValid(key) {
         return this.indexOf(key) >= 0 || (this.bloom !== null && this.bloom.has(key));
+    }
+
+    /**
+     * true if words[i] is a capitalised word that is only ever written that way
+     * (German nouns like "Haus", English "Monday"): a lower-case spelling of it is
+     * a case error.  False for lower-case/ALL-CAPS words and for case-ambiguous
+     * words ("Essen"/"essen").  Without amb data (v1 files) nothing is forced.
+     */
+    isCapitalOnly(i) {
+        if (i < 0 || !this._amb)
+            return false;
+        const w = this.words[i];
+        const c0 = w.charCodeAt(0);
+        if (c0 >= 97 && c0 <= 122)
+            return false;
+        if (w.length > 1 && w.slice(1) !== w.slice(1).toLowerCase())
+            return false;     // ALL CAPS / mixed (acronyms, "McDonald")
+        if (w.charAt(0) === w.charAt(0).toLowerCase())
+            return false;     // starts with ä/ö/ü etc. in lower case
+        return !this._amb.has(i);
     }
 
     mass(lo, hi) {
@@ -310,13 +335,30 @@ export class Lexicon {
 }
 
 export class Bigrams {
-    constructor(table = {}) {
+    /**
+     * @param {object} table  ctx -> [total, next1, count1, ...]
+     * @param {string[]} [keys]  lexicon keys; successors given as numbers are indices into it (v2)
+     */
+    constructor(table = {}, keys = null) {
         this.table = table;
+        this._keys = keys;
+        this._done = keys ? new Set() : null;
     }
 
-    /** raw entry [total, w1, c1, ...] or null; ctx is lower case, '<s>' for sentence start */
+    /** raw entry [total, w1, c1, ...] (w = lower-case key) or null; '<s>' for sentence start */
     get(ctx) {
-        return Object.prototype.hasOwnProperty.call(this.table, ctx) ? this.table[ctx] : null;
+        if (!Object.prototype.hasOwnProperty.call(this.table, ctx))
+            return null;
+        const e = this.table[ctx];
+        if (this._done && !this._done.has(ctx)) {
+            // v2: resolve successor indices to keys once, on first use
+            for (let j = 1; j < e.length; j += 2) {
+                if (typeof e[j] === 'number')
+                    e[j] = this._keys[e[j]] ?? '';
+            }
+            this._done.add(ctx);
+        }
+        return e;
     }
 
     /** count of (ctx, key) and total of ctx; {count, total} or null if ctx unknown */
@@ -338,10 +380,11 @@ export function parseLanguageData(data) {
     const obj = typeof data === 'object' && !(data instanceof Uint8Array) && !(data?.toArray)
         ? data : JSON.parse(decodeText(data));
     const t1 = now();
-    if (obj.v !== 1)
+    if (obj.v !== 1 && obj.v !== 2)
         throw new Error(`unsupported prediction data version ${obj.v}`);
-    const lexicon = new Lexicon({words: obj.words, f: obj.f, bloom: obj.bloom, lang: obj.lang});
-    const bigrams = new Bigrams(obj.bigrams || {});
+    const lexicon = new Lexicon({words: obj.words, f: obj.f, bloom: obj.bloom, lang: obj.lang,
+        amb: obj.v >= 2 ? obj.amb ?? [] : null});
+    const bigrams = new Bigrams(obj.bigrams || {}, obj.v >= 2 ? lexicon.keys : null);
     const t2 = now();
     return {lang: obj.lang, lexicon, bigrams, stats: {parseMs: t1 - t0, indexMs: t2 - t1}};
 }

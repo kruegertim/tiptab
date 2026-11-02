@@ -94,7 +94,9 @@ measure('nextKeyProbs', i => engine.nextKeyProbs(prefixes[i]));
 const LONG = ['donaudampfschifffa', 'donaudampfschifffahrtsgesellschaft', 'Fahrradschlossschlüssel',
     'Kaffeetassenhalterx', 'qwertzuiopasdfghjkl', 'Bundesverfassungsgerichts', 'Geburtstagspartyy',
     'abcdefghijklmnopqrstuvwxyz', 'Rindfleischetikettierung', 'unbelievablyx', 'internationalizatoin',
-    'xqzvbnmlkjhgf', 'Schifffahrtskapitän', 'Straßenbahnhaltestellen'];
+    'xqzvbnmlkjhgf', 'Schifffahrtskapitän', 'Straßenbahnhaltestellen',
+    // umlauts typed as ae/oe/ue/ss (variant expansion)
+    'Fruehstuecksbuefettueberraschung', 'Strassenbahnhaltestellenschluessel', 'gruessgruessgruess'];
 const longPrefixes = [];
 for (const w of LONG)
     for (let i = 1; i <= w.length; i++)

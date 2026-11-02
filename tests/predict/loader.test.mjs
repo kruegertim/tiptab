@@ -63,3 +63,33 @@ test('small synthetic lexicon', () => {
     assert.deepEqual(seen, ['o']);
     assert.ok(BloomFilter);
 });
+
+test('format v2: successor indices, case-ambiguity list; v1 still works', () => {
+    // sorted keys: apfel auto essen haus ich
+    const v2 = parseLanguageData({v: 2, lang: 'xx', words: ['Apfel', 'auto', 'Essen', 'Haus', 'ich'],
+        f: [80, 90, 70, 100, 120], amb: [2], bigrams: {ich: [10, 3, 6, 0, 2], '<s>': [5, 4, 5]}});
+    assert.deepEqual(v2.bigrams.get('ich'), [10, 'haus', 6, 'apfel', 2]);
+    assert.deepEqual(v2.bigrams.get('ich'), [10, 'haus', 6, 'apfel', 2], 'resolved once, stable');
+    assert.deepEqual(v2.bigrams.lookup('ich', 'apfel'), {count: 2, total: 10});
+    assert.equal(v2.bigrams.get('<s>')[1], 'ich');
+    const L = v2.lexicon;
+    assert.equal(L.isCapitalOnly(L.indexOf('haus')), true);
+    assert.equal(L.isCapitalOnly(L.indexOf('apfel')), true);
+    assert.equal(L.isCapitalOnly(L.indexOf('essen')), false, 'in amb');
+    assert.equal(L.isCapitalOnly(L.indexOf('auto')), false, 'lower case canonical');
+    const v1 = parseLanguageData({v: 1, lang: 'xx', words: ['Haus', 'ich'], f: [100, 120],
+        bigrams: {ich: [10, 'haus', 6]}});
+    assert.deepEqual(v1.bigrams.get('ich'), [10, 'haus', 6]);
+    assert.equal(v1.lexicon.isCapitalOnly(0), false, 'v1 data never forces case');
+});
+
+test('shipped data: German nouns are capital-only, ambiguous words are not', () => {
+    const L = loader.load('de').lexicon;
+    for (const w of ['haus', 'auto', 'tag', 'mädchen'])
+        assert.ok(L.isCapitalOnly(L.indexOf(w)), w);
+    for (const w of ['ich', 'essen', 'sie', 'morgen', 'leben'])
+        assert.ok(!L.isCapitalOnly(L.indexOf(w)), w);
+    const B = loader.load('de').bigrams;
+    assert.ok(Object.keys(B.table).length >= 10000, 'bigram contexts');
+    assert.equal(B.get('guten')[1], 'tag');
+});
