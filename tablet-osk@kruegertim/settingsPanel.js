@@ -13,6 +13,8 @@ const OPACITY_MIN = 0.3;
 const OPACITY_MAX = 1.0;
 const KEY_HEIGHT_DEBOUNCE_MS = 150;
 const OPACITY_THROTTLE_MS = 60;
+const BRIGHTNESS_MIN = 0.65;
+const BRIGHTNESS_MAX = 1.0;
 const MIN_ROW_MM = 9;
 const HOLD_MIN_MS = 300;
 const HOLD_MAX_MS = 2000;
@@ -114,6 +116,8 @@ export const SettingsPanel = GObject.registerClass({
             mm => this._settings.set_double('key-height-mm', mm));
         this._opWriter = new DelayedWriter(OPACITY_THROTTLE_MS,
             v => this._settings.set_double('floating-opacity', v), {throttle: true});
+        this._brWriter = new DelayedWriter(OPACITY_THROTTLE_MS,
+            v => this._settings.set_double('label-brightness', v), {throttle: true});
         this._holdWriter = new DelayedWriter(HOLD_DEBOUNCE_MS,
             ms => this._settings.set_int('modifier-hold-ms', ms));
         this._clearConfirmId = 0;
@@ -142,6 +146,7 @@ export const SettingsPanel = GObject.registerClass({
             'changed::hide-after-submit', () => this._syncSwitch(this._submitSwitch, 'hide-after-submit'),
             'changed::move-dock-left', () => this._syncSwitch(this._dockSwitch, 'move-dock-left'),
             'changed::floating-opacity', () => this._syncOpacity(),
+            'changed::label-brightness', () => this._syncBrightness(),
             'changed::super-symbol', () => this._superSeg.setActive(this._settings.get_string('super-symbol')),
             'changed::modifier-hold-release', () => this._syncHoldRelease(),
             'changed::modifier-hold-ms', () => this._syncHoldMs(),
@@ -307,6 +312,21 @@ export const SettingsPanel = GObject.registerClass({
             r.opacity = row;
         }
 
+        // Helligkeit der Beschriftung
+        {
+            const {row, valueLabel, slider} = this._sliderRow('Helligkeit der Beschriftung', null);
+            this._brLabel = valueLabel;
+            this._brSlider = slider;
+            slider.connect('drag-end', () => this._brWriter.flush());
+            slider.connect('notify::value', () => {
+                const v = this._brValue();
+                this._brLabel.text = formatPercent(v);
+                if (!this._syncing)
+                    this._brWriter.schedule(v);
+            });
+            r.brightness = row;
+        }
+
         // Symbol der Super-Taste
         {
             const seg = this._segmented([['fish', 'Fisch'], ['diamond', 'Raute'], ['text', 'Super']],
@@ -371,10 +391,11 @@ export const SettingsPanel = GObject.registerClass({
         this._rows = r;
         // single-column order (contract order) and two-column order (left | right)
         this._order1 = [r.keyHeight, r.mode, r.fRow, r.layout, r.shrink, r.auto, r.submit, r.dock, r.opacity,
-            r.superSym, r.holdRelease, r.holdMs,
+            r.brightness, r.superSym, r.holdRelease, r.holdMs,
             r.predictHeader, r.suggest, r.autocorrect, r.hitareas, r.language, r.clearDict];
         this._order2 = [
-            [r.keyHeight, r.layout, r.fRow, r.auto, r.submit, r.superSym, r.holdRelease, r.holdMs],
+            [r.keyHeight, r.layout, r.fRow, r.brightness, r.auto, r.submit, r.superSym, r.holdRelease,
+                r.holdMs],
             [r.mode, r.shrink, r.opacity, r.dock,
                 r.predictHeader, r.suggest, r.autocorrect, r.hitareas, r.language, r.clearDict],
         ];
@@ -707,6 +728,11 @@ export const SettingsPanel = GObject.registerClass({
         return snapKeyHeight(KEY_HEIGHT_MIN + this._khSlider.value * (KEY_HEIGHT_MAX - KEY_HEIGHT_MIN));
     }
 
+    _brValue() {
+        const v = BRIGHTNESS_MIN + this._brSlider.value * (BRIGHTNESS_MAX - BRIGHTNESS_MIN);
+        return Math.round(v * 100) / 100;
+    }
+
     _opValue() {
         const v = OPACITY_MIN + this._opSlider.value * (OPACITY_MAX - OPACITY_MIN);
         return Math.round(v * 100) / 100;
@@ -756,6 +782,14 @@ export const SettingsPanel = GObject.registerClass({
         this._khLabel.text = formatMm(snapKeyHeight(mm));
     }
 
+    _syncBrightness() {
+        const v = this._settings.get_double('label-brightness');
+        this._withSync(() => {
+            this._brSlider.value = (v - BRIGHTNESS_MIN) / (BRIGHTNESS_MAX - BRIGHTNESS_MIN);
+        });
+        this._brLabel.text = formatPercent(v);
+    }
+
     _syncOpacity() {
         const v = this._settings.get_double('floating-opacity');
         this._withSync(() => {
@@ -802,6 +836,7 @@ export const SettingsPanel = GObject.registerClass({
         this._syncSwitch(this._submitSwitch, 'hide-after-submit');
         this._syncSwitch(this._dockSwitch, 'move-dock-left');
         this._syncOpacity();
+        this._syncBrightness();
         this._superSeg.setActive(this._settings.get_string('super-symbol'));
         this._syncHoldRelease();
         this._syncHoldMs();
@@ -814,6 +849,7 @@ export const SettingsPanel = GObject.registerClass({
     _flushWrites() {
         this._khWriter.flush();
         this._opWriter.flush();
+        this._brWriter.flush();
         this._holdWriter.flush();
     }
 
@@ -821,6 +857,7 @@ export const SettingsPanel = GObject.registerClass({
         this._flushWrites();
         this._khWriter.cancel();
         this._opWriter.cancel();
+        this._brWriter.cancel();
         this._holdWriter.cancel();
         if (this._clearConfirmId) {
             GLib.source_remove(this._clearConfirmId);

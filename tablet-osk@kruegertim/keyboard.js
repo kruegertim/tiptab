@@ -518,6 +518,7 @@ export const OskKeyboard = GObject.registerClass({
         this._settings.connectObject(
             'changed::layout', () => this._rebuild(),
             'changed::show-f-row', () => this._rebuild(),
+            'changed::label-brightness', () => this._applyContainerStyle(),
             'changed::super-symbol', () => {
                 const sym = this._readSuperSymbol();
                 if (sym !== this._superSymbol) {
@@ -738,6 +739,11 @@ export const OskKeyboard = GObject.registerClass({
         let style = `padding: 0 ${p}px ${p}px ${p}px; spacing: 0;`;
         if (this._floating)
             style += ` border-width: ${FLOAT_BORDER_PX}px;`;
+        // Label colour (inherited by all keys): grey level from label-brightness,
+        // 1.0 = #f5f5f5. Even the minimum (0.65) keeps >= 7:1 contrast on #141414.
+        const b = Math.min(1, Math.max(0.65, this._settings.get_double('label-brightness')));
+        const v = Math.round(245 * b);
+        style += ` color: rgb(${v}, ${v}, ${v});`;
         this.style = style;
     }
 

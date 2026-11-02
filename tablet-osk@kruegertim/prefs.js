@@ -123,6 +123,35 @@ export default class TabletOskPreferences extends ExtensionPreferences {
         });
         modeGroup.add(opacityRow);
 
+        const brightnessRow = new Adw.SpinRow({
+            title: 'Helligkeit der Beschriftung (%)',
+            subtitle: 'Helligkeit der Tastenbeschriftung (100 % = fast weiß)',
+            digits: 0,
+            adjustment: new Gtk.Adjustment({
+                lower: 65,
+                upper: 100,
+                step_increment: 5,
+                page_increment: 10,
+            }),
+        });
+        const syncBrightness = () => {
+            const pct = Math.round(settings.get_double('label-brightness') * 100);
+            if (brightnessRow.value !== pct)
+                brightnessRow.value = pct;
+        };
+        syncBrightness();
+        brightnessRow.connect('notify::value', () => {
+            const v = brightnessRow.value / 100;
+            if (Math.abs(settings.get_double('label-brightness') - v) > 0.001)
+                settings.set_double('label-brightness', v);
+        });
+        const brightnessId = settings.connect('changed::label-brightness', syncBrightness);
+        window.connect('close-request', () => {
+            settings.disconnect(brightnessId);
+            return false;
+        });
+        modeGroup.add(brightnessRow);
+
         const resetRow = new Adw.ActionRow({
             title: 'Position zurücksetzen',
             subtitle: 'Schwebende Tastatur wieder zentriert am unteren Rand mit Standardbreite',

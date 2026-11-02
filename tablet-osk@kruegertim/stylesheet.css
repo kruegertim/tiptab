@@ -79,9 +79,10 @@
 }
 
 /* ---- keys ---- */
+/* Key label colour is not set here: OskKeyboard sets it inline from the
+ * label-brightness setting and keys/labels/icons inherit it. */
 .tosk-key {
     background-color: #141414;
-    color: #f5f5f5;
     border-radius: 6px;
 }
 
@@ -106,30 +107,18 @@
     border-radius: 0 0 6px 6px;
 }
 
-.tosk-label-main {
-    color: #f5f5f5;
-}
-
-.tosk-label-small {
-    color: #e8e8e8;
-}
 
 /* keycap glyphs (shift / base / AltGr), all the same size and colour;
  * inactive levels are dimmed via opacity from keyboard.js */
 .tosk-glyph {
-    color: #f5f5f5;
     font-weight: bold;
-}
-
-.tosk-icon-fish {
-    color: #f5f5f5;
 }
 
 /* Fn key text and every Fn-layer secondary label/icon: ThinkPad blue */
 .tosk-label-fn,
 .tosk-fn-icon,
 .tosk-key-fn .tosk-label-main {
-    color: #4a90d9;
+    color: #4282c4;
 }
 
 .tosk-fn-box {
@@ -138,7 +127,7 @@
 
 .tosk-fn-on .tosk-label-fn,
 .tosk-fn-on .tosk-fn-icon {
-    color: #7db4ef;
+    color: #6fa3dc;
 }
 
 .tosk-fn-on .tosk-label-fn {
