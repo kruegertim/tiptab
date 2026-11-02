@@ -98,6 +98,10 @@
       <default>true</default>
       <summary>Correct the current word automatically on space/punctuation (BackSpace right after reverts)</summary>
     </key>
+    <key name="auto-capitalize" type="b">
+      <default>true</default>
+      <summary>Capitalise the first word of a sentence (only where the app reports the text before the cursor)</summary>
+    </key>
     <key name="dynamic-hitareas" type="b">
       <default>true</default>
       <summary>Enlarge the touch area of likely next letters (invisible, iOS-like)</summary>

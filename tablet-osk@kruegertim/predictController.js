@@ -51,6 +51,8 @@ export class PredictController {
         this._probsCache = {key: null, probs: null};
         this._acCache = {key: null, value: null};
         this._allowed = true;
+        this._surroundingKnown = false;
+        this._capOn = false; // engine default: autoCapitalize off
         this._slowWarned = false;
 
         this._refreshId = 0;
@@ -78,6 +80,7 @@ export class PredictController {
             'changed::suggestions', () => this._onSettingsChanged(),
             'changed::autocorrect', () => this._onSettingsChanged(),
             'changed::dynamic-hitareas', () => this._onSettingsChanged(),
+            'changed::auto-capitalize', () => this._onSettingsChanged(),
             'changed::prediction-language', () => this._onLanguageChanged(),
             'changed::layout', () => this._onLanguageChanged(),
             'changed::clear-userdict-request', () => this._clearUserDict(),
@@ -116,6 +119,7 @@ export class PredictController {
         this._buffer = '';
         this._autoSpace = false;
         this._lastOwnEdit = 0;
+        this._surroundingKnown = false;
         this._removeSource('_resyncId');
         this._syncFromSurrounding(true);
         this._queueRefresh();
@@ -193,6 +197,40 @@ export class PredictController {
         this._suggestions = s.get_boolean('suggestions');
         this._autocorrect = s.get_boolean('autocorrect');
         this._dynamicHit = s.get_boolean('dynamic-hitareas');
+        this._autoCapSetting = s.get_boolean('auto-capitalize');
+    }
+
+    /**
+     * Sentence-start capitalisation is only safe when we know the real text before the cursor
+     * (surrounding text from the app) and the field does not ask for lower case.
+     */
+    _capitalizeAllowed() {
+        if (!this._autoCapSetting || !this._surroundingKnown || !this._allowed)
+            return false;
+        const im = Main.inputMethod;
+        if (!im?.currentFocus)
+            return false;
+        // Shell entries (overview search, run dialog …) take searches/commands: never capitalise.
+        if (global.stage.get_key_focus() instanceof Clutter.Text)
+            return false;
+        const P = Clutter.InputContentPurpose;
+        if ([P.URL, P.EMAIL, P.NAME, P.PASSWORD, P.TERMINAL].includes(im.content_purpose))
+            return false;
+        const H = Clutter.InputContentHintFlags;
+        return !(im.content_hints & (H.LOWERCASE | H.HIDDEN_TEXT | H.SENSITIVE_DATA));
+    }
+
+    _syncCapitalize() {
+        const on = this._capitalizeAllowed();
+        if (on === this._capOn || !this._engine)
+            return;
+        this._capOn = on;
+        try {
+            this._engine.setAutoCapitalize?.(on);
+        } catch (e) {
+            console.error(`[tablet-osk] setAutoCapitalize failed: ${e.message}`);
+        }
+        this._acCache = {key: null, value: null};
     }
 
     _onSettingsChanged() {
@@ -375,6 +413,7 @@ export class PredictController {
         const before = textBeforeCursor(text, cursor);
         if (before === null)
             return;
+        this._surroundingKnown = true;
         const next = tail(before);
         if (next === this._buffer)
             return;
@@ -516,7 +555,8 @@ export class PredictController {
     _correctionFor(word, prevWord) {
         if (!this._engine || this._state.isBlocked(word))
             return null;
-        const key = `${prevWord ?? ''}\u0001${word}`;
+        this._syncCapitalize();
+        const key = `${this._capOn ? 1 : 0}\u0001${prevWord ?? ''}\u0001${word}`;
         if (this._acCache.key === key)
             return this._acCache.value;
         let value = null;
@@ -542,6 +582,7 @@ export class PredictController {
     }
 
     _refresh() {
+        this._syncCapitalize();
         if (!this._engine || !this._suggestions || !this._allowed) {
             this._setSlots(EMPTY_SLOTS);
             return;
@@ -750,6 +791,7 @@ export class PredictController {
         if (stale())
             throw new Error('cancelled');
 
+        this._capOn = false; // new engine starts with autoCapitalize off
         this._engine = await this._idle(() => {
             const Engine = mods.engine.PredictionEngine;
             const engine = new Engine({

@@ -142,6 +142,7 @@ export const SettingsPanel = GObject.registerClass({
             'changed::suggestions', () => this._syncSwitch(this._suggestSwitch, 'suggestions'),
             'changed::autocorrect', () => this._syncSwitch(this._autocorrectSwitch, 'autocorrect'),
             'changed::dynamic-hitareas', () => this._syncSwitch(this._hitSwitch, 'dynamic-hitareas'),
+            'changed::auto-capitalize', () => this._syncSwitch(this._capSwitch, 'auto-capitalize'),
             'changed::prediction-language', () => this._langSeg.setActive(this._settings.get_string('prediction-language')),
             this);
 
@@ -339,6 +340,8 @@ export const SettingsPanel = GObject.registerClass({
 
         this._hitSwitch = this._switch('dynamic-hitareas');
         r.hitareas = this._row('Dynamische Trefferflächen', this._hitSwitch);
+        this._capSwitch = this._switch('auto-capitalize');
+        r.autocap = this._row('Satzanfang groß', this._capSwitch);
 
         {
             const seg = this._segmented([['auto', 'Auto'], ['de', 'Deutsch'], ['en', 'Englisch']],
@@ -366,11 +369,11 @@ export const SettingsPanel = GObject.registerClass({
         // single-column order (contract order) and two-column order (left | right)
         this._order1 = [r.keyHeight, r.mode, r.fRow, r.layout, r.shrink, r.auto, r.submit, r.dock, r.opacity,
             r.superSym, r.holdRelease, r.holdMs,
-            r.predictHeader, r.suggest, r.autocorrect, r.hitareas, r.language, r.clearDict];
+            r.predictHeader, r.suggest, r.autocorrect, r.autocap, r.hitareas, r.language, r.clearDict];
         this._order2 = [
             [r.keyHeight, r.layout, r.fRow, r.auto, r.submit, r.superSym, r.holdRelease, r.holdMs],
             [r.mode, r.shrink, r.opacity, r.dock,
-                r.predictHeader, r.suggest, r.autocorrect, r.hitareas, r.language, r.clearDict],
+                r.predictHeader, r.suggest, r.autocorrect, r.autocap, r.hitareas, r.language, r.clearDict],
         ];
 
         this._colA = new St.BoxLayout({vertical: true, x_expand: true, style_class: 'tosk-settings-column'});
@@ -745,6 +748,7 @@ export const SettingsPanel = GObject.registerClass({
         this._syncSwitch(this._suggestSwitch, 'suggestions');
         this._syncSwitch(this._autocorrectSwitch, 'autocorrect');
         this._syncSwitch(this._hitSwitch, 'dynamic-hitareas');
+        this._syncSwitch(this._capSwitch, 'auto-capitalize');
         this._langSeg.setActive(this._settings.get_string('prediction-language'));
     }
 

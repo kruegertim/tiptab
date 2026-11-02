@@ -231,6 +231,8 @@ export default class TabletOskPreferences extends ExtensionPreferences {
         predictGroup.add(switchRow(settings, 'autocorrect', 'Autokorrektur',
             'Tippfehler werden bei Leerzeichen oder Satzzeichen korrigiert; Rücktaste direkt danach ' +
             'stellt das getippte Wort wieder her'));
+        predictGroup.add(switchRow(settings, 'auto-capitalize', 'Satzanfang groß',
+            'Erstes Wort eines Satzes automatisch groß schreiben (nur wo die App den Text vor dem Cursor meldet; nicht in URL-, E-Mail- und Namensfeldern)'));
         predictGroup.add(switchRow(settings, 'dynamic-hitareas', 'Dynamische Trefferflächen',
             'Wahrscheinliche nächste Buchstaben sind unsichtbar etwas leichter zu treffen'));
         predictGroup.add(comboRow(window, settings, 'prediction-language', 'Sprache', [
