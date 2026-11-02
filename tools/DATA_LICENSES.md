@@ -7,7 +7,8 @@ They are derived works; when the extension is distributed, keep this attribution
 | Used for | Source | Licence |
 |---|---|---|
 | Word frequencies (ranking, ~50k words/language) | hermitdave/FrequencyWords, 2018 lists built from OpenSubtitles 2018 (`content/2018/{de,en}/{de,en}_full.txt`, top 300k lines), https://github.com/hermitdave/FrequencyWords | Content: **CC-BY-SA 4.0** (code MIT). Attribution: Hermit Dave; OpenSubtitles (opensubtitles.org) via the OPUS corpus (P. Lison & J. Tiedemann, 2016). |
-| Bigrams (next-word prediction), sentence-start words, capitalisation evidence, English contractions | Tatoeba per-language sentence exports `deu_sentences.tsv.bz2`, `eng_sentences.tsv.bz2`, https://tatoeba.org/downloads | **CC-BY 2.0 FR**. Attribution: Tatoeba contributors. |
+| Bigrams (next-word prediction), sentence-start words, capitalisation evidence, English contractions | Tatoeba per-language sentence exports `deu_sentences.tsv.bz2`, `eng_sentences.tsv.bz2`, https://tatoeba.org/downloads (when not reachable: the Tatoeba-derived bigram table of the v1 data files in git, revision 7aab6b2) | **CC-BY 2.0 FR**. Attribution: Tatoeba contributors. |
+| More bigrams (12 000 context words), capitalisation evidence for the case-ambiguity list | Mozilla Common Voice sentence lists `server/data/{de,en}/sentence-collector.txt` and `wiki.{de,en}.txt` (sentences taken from Wikipedia), https://github.com/common-voice/common-voice | **CC0 1.0** (public domain dedication). |
 | Filtering subtitle junk, canonical spelling/case, "valid word" bloom filter | Debian `wngerman` (`/usr/share/dict/ngerman`, igerman98 by Björn Jacke) and `wamerican` (`/usr/share/dict/american-english`, SCOWL by Kevin Atkinson) | wngerman: GPL-2 / GPL-3; SCOWL: permissive (MIT-like SCOWL licence). |
 | Additional valid-word stems for the bloom filter | hunspell `de_DE_frami.dic` (igerman98) and `en_US.dic` (SCOWL) from `/usr/share/hunspell` | igerman98: GPL-2/GPL-3 (also LGPL/OASIS variants); en_US: SCOWL licence. |
 
@@ -17,5 +18,7 @@ Notes
 * The word lists only decide *which* words are kept (and their spelling); the bloom filter is a
   lossy hash of the dictionary word set (no words can be listed from it).
 * Tatoeba's stock names (Tom, Mary, …) are excluded from the bigram tables.
+* The corpora are mixed per context word (Tatoeba 3 : Common Voice sentence collector 2 :
+  Wikipedia sentences 1), so the large encyclopedic corpus does not drown the conversational one.
 * No personal data is included. The user's learned words live only in
   `~/.local/share/tablet-osk/userdict.json` (mode 0600).

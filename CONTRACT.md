@@ -275,3 +275,19 @@ New schema keys: `suggestions` b true, `autocorrect` b true, `dynamic-hitareas` 
 (Automatisch/Deutsch/Englisch), button "Gelerntes Wörterbuch löschen" (calls a GSettings-free path: write a
 `clear-userdict-request` counter key i, incremented by the button; the controller watches it and clears).
 Data loads lazily (first show) via GLib idle; never blocks a key press > 5 ms.
+
+## Amendment 4 — prediction quality (thread "Wörterbuch-Vorschläge verbessern")
+
+All changes are additive; existing calls behave as before except where noted.
+- `engine.autocorrect()` results carry `kind`: `'typo'` | `'case'` | `'phrase'`. New corrections:
+  ae/oe/ue/ss typed for ä/ö/ü/ß (`fuer` → `für`, `Strasse` → `Straße`), lower-case German nouns and
+  English proper nouns (`haus` → `Haus`, `monday` → `Monday`; words that also exist in lower case such as
+  `essen`/`Essen` are left alone), missing apostrophes / glued words (`im` → `I'm`, `cant` → `can't`,
+  `alot` → `a lot`, `garnicht` → `gar nicht`). A replacement may contain a space.
+- Sentence-start capitalisation: `new PredictionEngine({..., autoCapitalize})` / `engine.setAutoCapitalize(bool)`,
+  **default off**. When on, `prevWord` null / '' / ending in `.!?` counts as sentence start: autocorrect then
+  capitalises a lower-case word (`das` → `Das`, kind `'case'`) and suggest() shows capitalised candidates.
+  The controller should switch it on only when it knows the text before the cursor (surrounding text) and the
+  field's content hints do not ask for lower case (not for URL / e-mail / name fields).
+- Undo of a case/phrase correction works like any other (`undoAutocorrect` blocks that word).
+- Data files are format v2 (successor indices, `amb` list); loader.js reads v1 and v2.

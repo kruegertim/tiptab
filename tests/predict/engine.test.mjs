@@ -40,6 +40,25 @@ const POSITIVE = [
     [en, 'hosue', 'house'],
     [en, 'dont', "don't"],
     [en, 'i', 'I'],
+    // umlauts typed as ae/oe/ue, ß as ss
+    [de, 'fuer', 'für'],
+    [de, 'Maedchen', 'Mädchen'],
+    [de, 'muessen', 'müssen'],
+    [de, 'koennen', 'können'],
+    [de, 'schoen', 'schön'],
+    [de, 'Strasse', 'Straße'],
+    [de, 'weiss', 'weiß'],
+    // German nouns typed in lower case
+    [de, 'haus', 'Haus'],
+    [de, 'auto', 'Auto'],
+    // missing apostrophes / glued words
+    [en, 'im', "I'm"],
+    [en, 'youre', "you're"],
+    [en, 'cant', "can't"],
+    [en, 'alot', 'a lot'],
+    [de, 'garnicht', 'gar nicht'],
+    // proper nouns
+    [en, 'monday', 'Monday'],
 ];
 
 for (const [eng, typed, expected, prev] of POSITIVE) {
@@ -54,7 +73,7 @@ for (const [eng, typed, expected, prev] of POSITIVE) {
 
 const NEGATIVE = [
     // valid words
-    [de, 'Hallo'], [de, 'das'], [de, 'Haus'], [de, 'haus'], [de, 'nicht'], [de, 'weil'],
+    [de, 'Hallo'], [de, 'das'], [de, 'Haus'], [de, 'nicht'], [de, 'weil'],
     [de, 'Lampe'], [de, 'kannst'], [en, 'the'], [en, 'house'], [en, 'their'],
     // rare but valid dictionary words (bloom filter) and compounds
     [de, 'Geburtstagsparty'], [de, 'Hausmeisterei'], [de, 'Fahrradschlossschlüssel'],
@@ -66,7 +85,7 @@ const NEGATIVE = [
     // mixed case (camelCase / brand)
     [en, 'iPhone'], [de, 'GitHub'], [en, 'McDonald'],
     // very short, ambiguous
-    [de, 'ud'], [de, 'ab'], [en, 'ot'], [en, 'im'], [de, 'x'],
+    [de, 'ud'], [de, 'ab'], [en, 'ot'], [de, 'im'], [de, 'x'],
     // nonsense without a close candidate
     [de, 'xyzq'], [en, 'qqqq'],
 ];
@@ -129,7 +148,11 @@ test('suggest: valid typed word stays in slot 0 (not quoted), no autocorrect fla
 });
 
 test('suggest: German noun shown capitalised, sentence-start capitalisation follows typed text', () => {
-    assert.equal(de.suggest('haus')[0].word, 'Haus');
+    const h = de.suggest('haus');
+    assert.deepEqual([h[0].word, h[0].kind], ['haus', 'literal']);
+    assert.equal(h[1].word, 'Haus');
+    assert.equal(h[1].autocorrect, true);
+    assert.equal(de.suggest('Haus')[0].word, 'Haus');
     assert.equal(de.suggest('Ver')[1].word[0], 'V');
     assert.ok(de.suggest('VER').filter(Boolean).every(x => x.word === x.word.toUpperCase()));
 });
@@ -251,4 +274,57 @@ test('setLanguage switches lexicon via loader', () => {
     assert.equal(ac(eng, 'teh'), 'the');
     eng.setLanguage('de');
     assert.equal(ac(eng, 'udn'), 'und');
+});
+
+// ------------------------------------------------------------ umlauts, capitalisation, fixed phrases
+test('umlaut spellings: variants and scoring', () => {
+    const eng = makeEngine('de');
+    assert.deepEqual(eng._umlautVariants('muessen').sort(), ['mueßen', 'müssen', 'müßen']);
+    assert.deepEqual(eng._umlautVariants('strasse').sort(), ['straße']);
+    assert.deepEqual(eng._umlautVariants('fruehstueck').sort(), ['frühstueck', 'frühstück', 'fruehstück'].sort());
+    assert.deepEqual(eng._umlautVariants('haus'), []);
+    assert.deepEqual(makeEngine('en')._umlautVariants('blues'), []);
+    assert.ok(eng.errorCost('fuer', 'für') < 1, 'ue for ü is cheap');
+    assert.ok(eng.errorCost('strasse', 'straße') < 1.5, 'ss for ß is cheap');
+    // while typing: the umlaut word is offered before the word is finished
+    assert.ok(eng.suggest('schoe').some(s => s?.word === 'schön'));
+    assert.ok(eng.suggest('Fruehst').some(s => s?.word.startsWith('Frühstück')));
+    // valid words containing ae/oe/ue/ss stay
+    for (const w of ['neue', 'Feuer', 'aktuell', 'Quelle', 'Masse', 'Wasser', 'Poesie'])
+        assert.equal(eng.autocorrect(w, 'die'), null, w);
+});
+
+test('capitalisation: German nouns always, sentence start only with autoCapitalize', () => {
+    const eng = makeEngine('de');
+    assert.deepEqual(eng.autocorrect('haus', 'das'), {replacement: 'Haus', confidence: 0.95, original: 'haus', kind: 'case'});
+    assert.equal(eng.autocorrect('essen', 'wir'), null, 'Essen/essen is ambiguous');
+    assert.equal(eng.autocorrect('HAUS', 'das'), null, 'all caps is left alone');
+    assert.equal(eng.autocorrect('das', null), null, 'off by default');
+    eng.setAutoCapitalize(true);
+    assert.equal(eng.autocorrect('das', null)?.replacement, 'Das');
+    assert.equal(eng.autocorrect('das', 'Hallo.')?.replacement, 'Das');
+    assert.equal(eng.autocorrect('das', 'und'), null, 'mid-sentence');
+    assert.equal(eng.autocorrect('dsa', null)?.replacement, 'Das', 'typo fixed and capitalised');
+    assert.equal(eng.autocorrect('fuer', null)?.replacement, 'Für');
+    assert.equal(eng.autocorrect('Das', null), null);
+    assert.equal(eng.autocorrect('du', null)?.replacement, 'Du', 'two-letter words too');
+    const s = eng.suggest('hal', null);
+    assert.ok(s.filter(x => x && x.kind !== 'literal').every(x => /^\p{Lu}/u.test(x.word)), JSON.stringify(s));
+    assert.equal(s[0].word, 'hal', 'the literal stays as typed');
+    eng.undoAutocorrect('das', 'Das');
+    assert.equal(eng.autocorrect('das', null), null, 'undo blocks it');
+    eng.setAutoCapitalize(false);
+    const en = makeEngine('en');
+    assert.equal(en.autocorrect('monday', 'on')?.replacement, 'Monday');
+    assert.equal(en.autocorrect('may', 'you'), null, 'May/may is ambiguous');
+});
+
+test('fixed phrases: missing apostrophes and glued words', () => {
+    const en = makeEngine('en');
+    assert.equal(en.autocorrect('Im', null)?.replacement, "I'm");
+    assert.equal(en.autocorrect('Cant', null)?.replacement, "Can't");
+    assert.equal(en.autocorrect('CANT', null), null);
+    assert.equal(en.autocorrect('youre', 'if')?.kind, 'phrase');
+    assert.equal(makeEngine('de').autocorrect('Aufjedenfall', null)?.replacement, 'Auf jeden Fall');
+    assert.equal(makeEngine('de').autocorrect('im', 'ich'), null, 'German "im" is a word');
 });
