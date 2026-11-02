@@ -113,7 +113,7 @@ export const SettingsPanel = GObject.registerClass({
         this._reflowId = 0;
 
         this._khWriter = new DelayedWriter(KEY_HEIGHT_DEBOUNCE_MS,
-            mm => this._settings.set_double('key-height-mm', mm));
+            mm => this._settings.set_double(this._khKey(), mm));
         this._opWriter = new DelayedWriter(OPACITY_THROTTLE_MS,
             v => this._settings.set_double('floating-opacity', v), {throttle: true});
         this._brWriter = new DelayedWriter(OPACITY_THROTTLE_MS,
@@ -138,6 +138,7 @@ export const SettingsPanel = GObject.registerClass({
 
         this._settings.connectObject(
             'changed::key-height-mm', () => this._syncKeyHeight(),
+            'changed::thumb-key-height-mm', () => this._syncKeyHeight(),
             'changed::mode', () => this._syncMode(),
             'changed::show-f-row', () => this._syncSwitch(this._fRowSwitch, 'show-f-row'),
             'changed::layout', () => this._syncLayout(),
@@ -266,7 +267,7 @@ export const SettingsPanel = GObject.registerClass({
 
         // Modus
         {
-            const seg = this._segmented([['docked', 'Angedockt'], ['floating', 'Schwebend']],
+            const seg = this._segmented([['docked', 'Angedockt'], ['floating', 'Schwebend'], ['thumb', 'Daumen']],
                 id => this._settings.set_string('mode', id));
             this._modeSeg = seg;
             r.mode = this._row('Modus', seg.actor);
@@ -786,10 +787,15 @@ export const SettingsPanel = GObject.registerClass({
         }
     }
 
+    // The key height slider edits the active mode's value (thumb mode has its own).
+    _khKey() {
+        return this._settings.get_string('mode') === 'thumb' ? 'thumb-key-height-mm' : 'key-height-mm';
+    }
+
     _syncKeyHeight() {
         if (this._khDragging)
             return;
-        const mm = this._settings.get_double('key-height-mm');
+        const mm = this._settings.get_double(this._khKey());
         this._withSync(() => {
             this._khSlider.value = (mm - KEY_HEIGHT_MIN) / (KEY_HEIGHT_MAX - KEY_HEIGHT_MIN);
         });
@@ -825,8 +831,10 @@ export const SettingsPanel = GObject.registerClass({
     }
 
     _syncMode() {
-        const floating = this._settings.get_string('mode') === 'floating';
-        this._modeSeg.setActive(floating ? 'floating' : 'docked');
+        const mode = this._settings.get_string('mode');
+        const floating = mode === 'floating';
+        this._modeSeg.setActive(mode);
+        this._syncKeyHeight();
         this._setRowSensitive(this._rows.shrink, this._shrinkSwitch, !floating);
         this._setRowSensitive(this._rows.opacity, this._opSlider, floating);
     }

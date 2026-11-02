@@ -15,6 +15,7 @@ import {SettingsPanel} from './settingsPanel.js';
 import {FloatingController} from './floating.js';
 import {DockMover} from './dock.js';
 import {PredictController} from './predictController.js';
+import {SPLIT_TOTAL_UNITS, SPLIT_LEFT_UNITS, SPLIT_GAP_UNITS} from './layouts.js';
 
 const ANIMATION_TIME = 200;
 const MIN_FLOATING_KEY_MM = 6;
@@ -109,6 +110,7 @@ export default class TabletOskExtension extends Extension {
         this._settings.connectObject(
             'changed::key-height-mm', () => this._relayout(),
             'changed::keep-key-aspect', () => this._relayout(),
+            'changed::thumb-key-height-mm', () => this._relayout(),
             'changed::show-f-row', () => this._afterRebuild(),
             'changed::layout', () => this._afterRebuild(),
             'changed::mode', () => this._applyMode(),
@@ -267,6 +269,17 @@ export default class TabletOskExtension extends Extension {
         if (!monitor)
             return;
 
+        // Thumb mode (split keyboard) only in landscape; portrait falls back to docked.
+        const thumb = !this._isFloating && this._settings.get_string('mode') === 'thumb' &&
+            monitor.width > monitor.height;
+        this._keyboard.setThumb(thumb);
+        this._container.reactive = !thumb;
+        if (thumb)
+            this._container.add_style_class_name('tosk-container-thumb');
+        else
+            this._container.remove_style_class_name('tosk-container-thumb');
+        this._syncThumbHalves(thumb, monitor);
+
         if (this._isFloating) {
             this._keyboard.width = -1;
             this._keyboard.x_align = Clutter.ActorAlign.FILL;
@@ -277,11 +290,14 @@ export default class TabletOskExtension extends Extension {
             return;
         }
 
-        const keyPx = this._dockedKeyPx();
+        const keyPx = thumb
+            ? this._metrics.keyHeightPx(Main.layoutManager.primaryIndex,
+                this._settings.get_double('thumb-key-height-mm'))
+            : this._dockedKeyPx();
         this._keyboard.setKeyHeight(keyPx);
         // Below the reference height the keyboard gets narrower (centred), keeping
         // the key aspect ratio; the container (background, input) stays full width.
-        const refPx = this._referenceKeyPx();
+        const refPx = thumb ? 0 : this._referenceKeyPx();
         if (keyPx < refPx) {
             this._keyboard.width = Math.round(monitor.width * keyPx / refPx);
             this._keyboard.x_align = Clutter.ActorAlign.CENTER;
@@ -295,8 +311,47 @@ export default class TabletOskExtension extends Extension {
             Math.round(monitor.height * 0.6));
         this._container.set_size(monitor.width, height);
         this._container.set_position(monitor.x, monitor.y + monitor.height - height);
+        if (thumb)
+            this._layoutThumbHalves(monitor.width);
         if (!this._visible)
             this._container.translation_y = height;
+    }
+
+    // Thumb mode: background panels behind the two halves. They are reactive so taps
+    // between keys don't fall through; the middle third stays free for the app.
+    _syncThumbHalves(thumb, _monitor) {
+        if (!thumb) {
+            this._thumbHalves?.forEach(w => w.hide());
+            this._keyboard.setBarWidth(-1);
+            return;
+        }
+        if (!this._thumbHalves) {
+            this._thumbHalves = [Clutter.ActorAlign.START, Clutter.ActorAlign.END].map(align => {
+                const w = new St.Widget({
+                    style_class: 'tosk-thumb-half',
+                    reactive: true,
+                    x_align: align,
+                    x_expand: true, // BinLayout honours x_align only for expanding children
+                    y_expand: true,
+                });
+                this._container.insert_child_below(w, this._keyboard);
+                return w;
+            });
+        }
+        this._thumbHalves.forEach(w => w.show());
+    }
+
+    _layoutThumbHalves(width) {
+        const kb = this._keyboard;
+        const pad = kb._pad, gap = kb._gap;
+        const unit = (width - 2 * pad + gap) / SPLIT_TOTAL_UNITS;
+        const leftEnd = pad + Math.round(SPLIT_LEFT_UNITS * unit) - gap;
+        const rightStart = pad + Math.round((SPLIT_LEFT_UNITS + SPLIT_GAP_UNITS) * unit);
+        const [left, right] = this._thumbHalves;
+        left.width = leftEnd + pad;
+        right.width = width - rightStart + pad;
+        // Suggestion strip over the gap between the halves.
+        kb.setBarWidth(Math.max(0, rightStart - leftEnd - 2 * pad), (leftEnd + rightStart - width) / 2);
     }
 
     _afterRebuild() {

@@ -20,7 +20,7 @@ import GObject from 'gi://GObject';
 import Pango from 'gi://Pango';
 import St from 'gi://St';
 
-import {getLayout, TOTAL_UNITS, FALLBACK_KEYVALS} from './layouts.js';
+import {getLayout, getSplitLayout, TOTAL_UNITS, SPLIT_TOTAL_UNITS, FALLBACK_KEYVALS} from './layouts.js';
 import {KeyInjector} from './injector.js';
 import {isWaylandCompositor} from './compat.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -423,7 +423,7 @@ class KeyRow extends St.Widget {
         const gap = this._keyboard._gap;
         const width = content.x2 - content.x1;
         // Unit includes one gap so key edges line up across rows.
-        const unit = (width + gap) / TOTAL_UNITS;
+        const unit = (width + gap) / this._keyboard._totalUnits;
         let cum = 0;
         for (const child of this.get_children()) {
             const x1 = content.x1 + Math.round(cum * unit);
@@ -661,6 +661,51 @@ export const OskKeyboard = GObject.registerClass({
         if (this._floating)
             height += 2 * this._gripH + 2 * FLOAT_BORDER_PX;
         return height;
+    }
+
+    // Thumb mode: the keyboard stays reactive (Clutter only emits captured-event on
+    // reactive ancestors, which the key/swipe handling relies on) but does not pick
+    // its own box, so the transparent middle passes touches to the app.
+    vfunc_pick(pickContext) {
+        if (!this._thumb) {
+            super.vfunc_pick(pickContext);
+            return;
+        }
+        for (const child of this.get_children())
+            child.pick(pickContext);
+    }
+
+    get _totalUnits() {
+        return this._thumb ? SPLIT_TOTAL_UNITS : TOTAL_UNITS;
+    }
+
+    get thumb() {
+        return !!this._thumb;
+    }
+
+    // Thumb mode: split layout, transparent middle (only keys and the bar are
+    // reactive), the suggestion bar as a strip over the middle gap.
+    setThumb(thumb) {
+        thumb = !!thumb;
+        if (!!this._thumb === thumb)
+            return;
+        this._thumb = thumb;
+        if (thumb)
+            this.add_style_class_name('tosk-thumb');
+        else
+            this.remove_style_class_name('tosk-thumb');
+        this._bar.x_expand = !thumb;
+        this._bar.x_align = thumb ? Clutter.ActorAlign.CENTER : Clutter.ActorAlign.FILL;
+        this._rebuild();
+    }
+
+    /**
+     * Thumb mode: width of the suggestion strip over the middle gap and its horizontal
+     * offset from the keyboard centre (the halves differ in width).
+     */
+    setBarWidth(px, offset = 0) {
+        this._bar.width = px > 0 ? px : -1;
+        this._bar.translation_x = px > 0 ? Math.round(offset) : 0;
     }
 
     setFloating(floating) {
@@ -908,20 +953,29 @@ export const OskKeyboard = GObject.registerClass({
         this._rowsBox.destroy_all_children();
         this._keys = [];
         this._modifierKeys = {};
-        this._rows = getLayout({
-            layout: this._settings.get_string('layout'),
-            fRow: this._settings.get_boolean('show-f-row'),
-        });
+        this._rows = this._thumb
+            ? getSplitLayout({layout: this._settings.get_string('layout')})
+            : getLayout({
+                layout: this._settings.get_string('layout'),
+                fRow: this._settings.get_boolean('show-f-row'),
+            });
 
         const enterParts = [];
         for (const rowDef of this._rows) {
             const row = new KeyRow(this);
             for (const def of rowDef) {
+                if (def.type === 'gap') {
+                    // Thumb mode: empty, non-reactive middle (touches reach the app).
+                    const spacer = new St.Widget({reactive: false});
+                    spacer.units = def.w;
+                    row.add_child(spacer);
+                    continue;
+                }
                 const key = new OskKey(def, this);
                 row.add_child(key);
                 this._keys.push(key);
                 if (def.type === 'modifier')
-                    this._modifierKeys[def.modifier] = key;
+                    (this._modifierKeys[def.modifier] ??= []).push(key); // split: two Shift keys
                 if (def.enterPart)
                     enterParts.push(key);
             }
@@ -1390,10 +1444,11 @@ export const OskKeyboard = GObject.registerClass({
 
     _updateModifierState() {
         const mk = this._modifierKeys ?? {};
-        mk.shift?.setLatched(this._shift === 1 || this._held.has('shift'), this._shift === 2);
-        mk.caps?.setLatched(false, this._caps);
+        const latch = (m, ...args) => mk[m]?.forEach(k => k.setLatched(...args));
+        latch('shift', this._shift === 1 || this._held.has('shift'), this._shift === 2);
+        latch('caps', false, this._caps);
         for (const m of LATCH_MODIFIERS)
-            mk[m]?.setLatched(this._latched.has(m) || this._held.has(m));
+            latch(m, this._latched.has(m) || this._held.has(m));
         const fnOn = this._latched.has('fn') || this._held.has('fn');
         if (fnOn)
             this.add_style_class_name('tosk-fn-on');

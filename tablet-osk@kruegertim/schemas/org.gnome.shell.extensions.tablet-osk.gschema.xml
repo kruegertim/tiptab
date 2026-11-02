@@ -7,6 +7,7 @@
   <enum id="org.gnome.shell.extensions.tablet-osk.Mode">
     <value nick="docked" value="0"/>
     <value nick="floating" value="1"/>
+    <value nick="thumb" value="2"/>
   </enum>
   <enum id="org.gnome.shell.extensions.tablet-osk.PredictionLanguage">
     <value nick="auto" value="0"/>
@@ -86,6 +87,11 @@
     <key name="suggestion-bar-position" enum="org.gnome.shell.extensions.tablet-osk.BarPosition">
       <default>'top'</default>
       <summary>Suggestion bar above (top) or below (bottom) the keys</summary>
+    </key>
+    <key name="thumb-key-height-mm" type="d">
+      <range min="7.0" max="20.0"/>
+      <default>11.0</default>
+      <summary>Key height in thumb mode (split keyboard), in mm</summary>
     </key>
     <key name="keep-key-aspect" type="b">
       <default>true</default>

@@ -88,7 +88,17 @@ export default class TabletOskPreferences extends ExtensionPreferences {
         modeGroup.add(comboRow(window, settings, 'mode', 'Modus', [
             ['docked', 'Angedockt'],
             ['floating', 'Schwebend'],
-        ], 'Angedockt = volle Breite am unteren Rand; Schwebend = frei verschiebbar und skalierbar'));
+            ['thumb', 'Daumen'],
+        ], 'Angedockt = volle Breite am unteren Rand; Schwebend = frei verschiebbar und skalierbar; ' +
+            'Daumen = geteilte Tastatur links und rechts unten (nur im Querformat)'));
+
+        const thumbHeightRow = new Adw.SpinRow({
+            title: 'Tastenhöhe im Daumen-Modus (mm)',
+            digits: 1,
+            adjustment: new Gtk.Adjustment({lower: 7, upper: 20, step_increment: 0.5, page_increment: 1}),
+        });
+        settings.bind('thumb-key-height-mm', thumbHeightRow, 'value', Gio.SettingsBindFlags.DEFAULT);
+        modeGroup.add(thumbHeightRow);
 
         const shrinkRow = switchRow(settings, 'shrink-workarea', 'Inhalt verkleinern',
             'Fenster machen der Tastatur Platz, statt verdeckt zu werden (nur angedockt)');
@@ -176,6 +186,7 @@ export default class TabletOskPreferences extends ExtensionPreferences {
             opacityRow.sensitive = floating;
             resetRow.sensitive = floating;
             shrinkRow.sensitive = !floating;
+            thumbHeightRow.sensitive = settings.get_string('mode') === 'thumb';
         };
         syncModeSensitivity();
         const modeId = settings.connect('changed::mode', syncModeSensitivity);

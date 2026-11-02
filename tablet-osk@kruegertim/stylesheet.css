@@ -42,6 +42,22 @@
     background-color: transparent;
 }
 
+/* Thumb mode: transparent middle; background only behind the two halves and the
+ * suggestion strip over the gap. */
+.tosk-keyboard.tosk-thumb {
+    background-color: transparent;
+}
+
+.tosk-thumb-half {
+    background-color: #262628;
+    border-radius: 14px 14px 0 0;
+}
+
+.tosk-keyboard.tosk-thumb .tosk-suggest-bar {
+    background-color: #262628;
+    border-radius: 10px;
+}
+
 
 .tosk-suggest-divider {
     background-color: rgba(255, 255, 255, 0.22);
