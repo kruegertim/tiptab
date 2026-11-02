@@ -320,6 +320,12 @@ export const OskKeyboard = GObject.registerClass({
             this);
 
         this.connect('destroy', () => this._onDestroy());
+        // Safety: release everything when a modal shell UI takes over (overview, screenshot UI).
+        Main.overview.connectObject('showing', () => this.resetModifiers(), this);
+        Main.screenshotUI?.connectObject('notify::visible', () => {
+            if (Main.screenshotUI.visible)
+                this.resetModifiers();
+        }, this);
 
         this._rebuild(false);
         this.setKeyHeight(this._keyHeight);
@@ -535,12 +541,23 @@ export const OskKeyboard = GObject.registerClass({
             break;
         case 'hide':
             break;
-        default:
+        default: {
             this._stopRepeat();
-            key._activated = true;
+            // A shortcut (Strg/Alt/Super latched) or an Fn function is sent exactly once:
+            // no auto-repeat, and one-shot modifiers are consumed immediately. The shortcut
+            // may open a modal shell UI (e.g. screencast) that swallows our release event.
+            const combo = this._shortcutModifiers().length > 0 ||
+                (this._latched.has('fn') && !!def.fnKeysym);
             this._activate(def);
-            if (def.repeat)
-                this._startRepeat(key);
+            if (combo) {
+                key._activated = false;
+                this._consumeOneShots();
+            } else {
+                key._activated = true;
+                if (def.repeat)
+                    this._startRepeat(key);
+            }
+        }
         }
     }
 
@@ -578,7 +595,11 @@ export const OskKeyboard = GObject.registerClass({
         this._repeatKey = key;
         this._repeatId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, REPEAT_DELAY_MS, () => {
             this._repeatId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, REPEAT_INTERVAL_MS, () => {
-                if (!key.mapped) {
+                // Stop if the key is gone or someone else grabbed the input (modal UI):
+                // then we will never see the release event.
+                const grab = global.stage.get_grab_actor();
+                if (!key.mapped || (grab && !this.contains(grab)) ||
+                    this._shortcutModifiers().length > 0) {
                     this._repeatId = 0;
                     this._repeatKey = null;
                     return GLib.SOURCE_REMOVE;
@@ -765,6 +786,8 @@ export const OskKeyboard = GObject.registerClass({
     // ------------------------------------------------------------ teardown
 
     _onDestroy() {
+        Main.overview.disconnectObject(this);
+        Main.screenshotUI?.disconnectObject(this);
         this._stopRepeat();
         this._clearSuperTimer();
         this._settings?.disconnectObject(this);
