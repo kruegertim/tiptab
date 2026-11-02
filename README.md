@@ -28,3 +28,12 @@ Deinstallation: `gnome-extensions disable tablet-osk@kruegertim` und den Ordner
   in den Einstellungen „Physische Tastatur ignorieren“ einschalten.
 
 Aufbau der Module: siehe `CONTRACT.md`.
+
+## Projektstand / Branches
+- `main`: installierbare, getestete Version (GNOME Shell 46, Ubuntu 24.04, Wayland).
+- `wip/next`: in Arbeit – Vorschlagsleiste, Autokorrektur, dynamische Trefferflächen, DE/EN-Wörterbücher,
+  neue Tastenbeschriftung, Halte-Logik für Umschalttasten.
+
+## Lizenz
+Code: Lizenz noch offen (TBD). Wörterbuchdaten (Branch `wip/next`, `predict/data/`): CC-BY-SA 4.0,
+Details in `tools/DATA_LICENSES.md`.
