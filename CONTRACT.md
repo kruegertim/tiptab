@@ -145,3 +145,51 @@ testing group: ignore-physical-keyboard switch. German UI strings.
 Creates container (St.Widget) at bottom of primary monitor, OskKeyboard inside, WorkArea, MonitorMetrics,
 PhysicalKeyboardMonitor, PanelIndicator, VisibilityController; slide animation; suppresses the built-in
 OSK (Main.keyboard) while enabled and restores it on disable.
+
+## Amendment 1 — in-keyboard settings panel + floating mode (Tim's request)
+
+New schema keys: `mode` 'docked'|'floating', `floating-opacity` d 0.3–1.0, `floating-x` i, `floating-y` i,
+`floating-width` i (-1 = defaults: centred, bottom, 70 % of monitor width).
+
+### A (keyboard.js) additions
+- Handle bar gets a **gear button** at its right end (touch target ≥ 9 mm ≈ keyHeight*0.8 square, icon
+  'emblem-system-symbolic' / 'preferences-system-symbolic'), plus (in floating mode) the handle acts as
+  grab bar. New signal `'settings-request'` emitted on gear tap. Gear must not trigger the swipe-down
+  logic (stop event propagation on the gear).
+- New method `setFloating(bool)`: in floating mode draw a **resize grip** at the bottom-right corner
+  (≥ 9 mm square, visible diagonal-lines icon or '⇲'), expose it as getter `resizeGrip` (St.Widget), and give
+  the keyboard rounded outer corners/border. In docked mode the grip is hidden.
+- Keyboard width = allocation width (it already scales keys by width/15); key height is still set by
+  setKeyHeight(px) — the coordinator computes it.
+
+### D — `settingsPanel.js`, `floating.js`
+```js
+export const SettingsPanel = GObject.registerClass(class extends St.BoxLayout {
+  constructor({settings, pxPerMm})  // pxPerMm(): function returning current logical px/mm
+  // touch-optimised overlay shown inside the keyboard container (coordinator adds it as an overlay
+  // child of the container on top of the keys, same size as the keyboard). Large rows (≥ 9 mm):
+  // Tastenhöhe (slider 7–20 mm, live value label, +/- buttons), Modus Angedockt/Schwebend (segmented),
+  // F-Reihe an/aus, Layout QWERTZ/QWERTY (segmented), Inhalt verkleinern an/aus (insensitive in floating
+  // mode), Automatisch einblenden an/aus, Deckkraft slider 30–100 % (only sensitive in floating mode),
+  // close button "Fertig". Bound directly to GSettings (two-way, react to external changes so the
+  // Adw prefs window and the panel stay in sync). Scroll (St.ScrollView) if content taller than keyboard.
+  // signal 'close-request'
+});
+export class FloatingController {
+  constructor({settings, container, getGrabActor, getResizeGrip, onGeometryChanged})
+  // In floating mode: press+drag on grab actor (keyboard handle) moves the container (touch + mouse,
+  // using global.stage.grab), resize grip drag changes width (keeping aspect: height follows from key
+  // height computed by coordinator → call onGeometryChanged()), clamps to the monitor's work area,
+  // saves floating-x/-y/-width to GSettings on release (not during motion). Applies floating-opacity
+  // (container.opacity = 255*v). enable()/disable() when mode switches; rebind() after keyboard rebuild.
+  destroy()
+}
+```
+In floating mode the coordinator: no strut (WorkArea.setShown(false) / affectsStruts off), no swipe-down
+on the handle (handle = grab bar; hide via hide key / panel icon), swipe-up-from-edge still shows.
+Floating key height = docked key height(mm→px) * floatingWidth / monitorWidth, min 6 mm.
+
+### C (prefs.js) additions
+Add rows for mode (ComboRow Angedockt/Schwebend) and floating opacity (SpinRow or Adw.ActionRow+Gtk.Scale
+30–100 %, sensitive only in floating mode). Floating x/y/width are not shown (maybe a "Position
+zurücksetzen" button that resets floating-x/-y/-width).

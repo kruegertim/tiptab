@@ -4,6 +4,10 @@
     <value nick="qwertz" value="0"/>
     <value nick="qwerty" value="1"/>
   </enum>
+  <enum id="org.gnome.shell.extensions.tablet-osk.Mode">
+    <value nick="docked" value="0"/>
+    <value nick="floating" value="1"/>
+  </enum>
   <schema id="org.gnome.shell.extensions.tablet-osk" path="/org/gnome/shell/extensions/tablet-osk/">
     <key name="layout" enum="org.gnome.shell.extensions.tablet-osk.Layout">
       <default>'qwertz'</default>
@@ -42,6 +46,27 @@
       <range min="50.0" max="400.0"/>
       <default>96.0</default>
       <summary>Pixels per inch used when the monitor's physical size is unknown</summary>
+    </key>
+    <key name="mode" enum="org.gnome.shell.extensions.tablet-osk.Mode">
+      <default>'docked'</default>
+      <summary>docked = full width at the bottom (may shrink work area); floating = movable, resizable panel</summary>
+    </key>
+    <key name="floating-opacity" type="d">
+      <range min="0.3" max="1.0"/>
+      <default>1.0</default>
+      <summary>Opacity of the keyboard in floating mode (0.3–1.0)</summary>
+    </key>
+    <key name="floating-x" type="i">
+      <default>-1</default>
+      <summary>Floating panel x position (logical px, -1 = centred)</summary>
+    </key>
+    <key name="floating-y" type="i">
+      <default>-1</default>
+      <summary>Floating panel y position (logical px, -1 = bottom)</summary>
+    </key>
+    <key name="floating-width" type="i">
+      <default>-1</default>
+      <summary>Floating panel width in logical px (-1 = 70% of monitor width); keys scale with it</summary>
     </key>
   </schema>
 </schemalist>

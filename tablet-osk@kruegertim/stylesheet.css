@@ -1,0 +1,199 @@
+/* Tablet OSK — ThinkPad (X270) keycap look.
+ * Sizes (font-size, padding, spacing, handle/grip dimensions) are set inline
+ * from keyboard.js in proportion to the key height. */
+
+.tosk-keyboard {
+    background-color: #262628;
+    font-family: "Liberation Sans", "Nimbus Sans", "Noto Sans", sans-serif;
+    font-weight: 500;
+    color: #f5f5f5;
+}
+
+.tosk-keyboard.tosk-floating {
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+/* ---- handle bar ---- */
+.tosk-handle {
+    background-color: transparent;
+}
+
+.tosk-handle-grip {
+    background-color: rgba(255, 255, 255, 0.35);
+    border-radius: 3px;
+}
+
+.tosk-handle-button {
+    color: #b8b8bc;
+    border-radius: 6px;
+}
+
+.tosk-handle-button:active {
+    background-color: #3c3c40;
+    color: #ffffff;
+}
+
+/* ---- footer / resize grip (floating mode) ---- */
+.tosk-resize-grip {
+    color: #8e8e93;
+    border-radius: 6px;
+}
+
+.tosk-resize-grip:active,
+.tosk-resize-grip:hover {
+    color: #ffffff;
+}
+
+/* ---- keys ---- */
+.tosk-key {
+    background-color: #141414;
+    color: #f5f5f5;
+    border-radius: 6px;
+}
+
+.tosk-key:active {
+    background-color: #3a3a3c;
+}
+
+.tosk-key-special {
+    background-color: #101010;
+}
+
+.tosk-key-special:active {
+    background-color: #3a3a3c;
+}
+
+/* ISO Enter: two actors that look like one key (top part reaches into the gap) */
+.tosk-enter-top {
+    border-radius: 6px 6px 0 6px;
+}
+
+.tosk-enter-bottom {
+    border-radius: 0 0 6px 6px;
+}
+
+.tosk-label-main {
+    color: #f5f5f5;
+}
+
+.tosk-label-small {
+    color: #e8e8e8;
+}
+
+.tosk-label-shift {
+    color: #d8d8da;
+}
+
+.tosk-label-altgr {
+    color: #9a9a9e;
+}
+
+/* Fn key text and every Fn-layer secondary label/icon: ThinkPad blue */
+.tosk-label-fn,
+.tosk-fn-icon,
+.tosk-key-fn .tosk-label-main {
+    color: #4a90d9;
+}
+
+.tosk-fn-box {
+    spacing: 1px;
+}
+
+.tosk-fn-on .tosk-label-fn,
+.tosk-fn-on .tosk-fn-icon {
+    color: #7db4ef;
+}
+
+.tosk-fn-on .tosk-label-fn {
+    font-weight: bold;
+}
+
+/* Latched / locked modifiers: TrackPoint red, only for active states */
+.tosk-key.tosk-latched {
+    background-color: #d1281c;
+}
+
+.tosk-key.tosk-latched .tosk-label-main,
+.tosk-key.tosk-latched .tosk-icon-main {
+    color: #ffffff;
+}
+
+.tosk-key.tosk-locked {
+    background-color: #d1281c;
+    box-shadow: inset 0 -3px 0 0 #ffffff;
+}
+/* ---- Part D: in-keyboard settings panel (sizes are set inline from pxPerMm) ---- */
+.tosk-settings-panel {
+  background-color: #1c1c1e;
+  color: #ffffff;
+}
+
+.tosk-settings-title {
+  font-weight: bold;
+  color: #ffffff;
+}
+
+.tosk-settings-done {
+  background-color: #d1281c;
+  color: #ffffff;
+  font-weight: bold;
+}
+.tosk-settings-done:hover { background-color: #e0382c; }
+.tosk-settings-done:active { background-color: #a81f15; }
+
+.tosk-settings-row {
+  background-color: #2c2c2e;
+  color: #ffffff;
+}
+
+.tosk-settings-label { color: #ffffff; }
+
+.tosk-settings-value {
+  color: #c7c7cc;
+  text-align: right;
+  font-feature-settings: "tnum";
+}
+
+/* round +/- buttons */
+.tosk-settings-step {
+  background-color: #3a3a3c;
+  color: #ffffff;
+  font-weight: bold;
+}
+.tosk-settings-step:hover { background-color: #48484a; }
+.tosk-settings-step:active { background-color: #d1281c; }
+
+/* slider (Slider.Slider: handle colour = foreground colour) */
+.tosk-settings-slider {
+  color: #ffffff;
+  -barlevel-background-color: #48484a;
+  -barlevel-active-background-color: #d1281c;
+  -barlevel-border-width: 0;
+  -slider-handle-border-width: 0;
+}
+.tosk-settings-slider:insensitive { color: #8e8e93; -barlevel-active-background-color: #636366; }
+
+/* toggle switch: St.Button(toggle_mode) with a knob child */
+.tosk-settings-switch {
+  background-color: #48484a;
+  transition-duration: 150ms;
+}
+.tosk-settings-switch:checked { background-color: #d1281c; }
+.tosk-settings-switch:insensitive { background-color: #3a3a3c; }
+.tosk-settings-switch-knob { background-color: #ffffff; }
+
+/* segmented control */
+.tosk-settings-segmented { spacing: 2px; }
+.tosk-settings-segment {
+  background-color: #3a3a3c;
+  color: #ffffff;
+}
+.tosk-settings-segment:hover { background-color: #48484a; }
+.tosk-settings-segment:checked {
+  background-color: #d1281c;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.tosk-settings-scroll { background-color: transparent; }
