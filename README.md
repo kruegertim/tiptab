@@ -7,12 +7,17 @@ Vollständige Bildschirmtastatur im ThinkPad-Stil: F-Reihe mit Fn-Ebene (Medient
 Bild↑/Bild↓, Pfeiltasten, AltGr-Zeichen, QWERTZ oder QWERTY.
 
 ## Funktionen
-- Blendet sich automatisch ein, wenn ein Textfeld angetippt wird, und aus, wenn der Fokus verloren geht.
-- Wischen vom unteren Bildschirmrand nach oben blendet ein, Wischen auf der Griffleiste nach unten blendet aus
+- Blendet sich automatisch ein, wenn ein Textfeld angetippt wird, und aus, wenn der Fokus verloren geht
+  oder ein einzeiliges Feld mit Enter abgeschickt wurde.
+- Wischen vom unteren Bildschirmrand nach oben blendet ein, Wischen nach unten auf den Tasten blendet aus
   (Touch und Maus). Symbol in der oberen Leiste zum Umschalten. Taste mit Tastatur-Symbol blendet aus.
 - Keine automatische Einblendung, solange eine externe Tastatur (USB/Bluetooth/Tastatur-Cover) angeschlossen ist.
 - „Inhalt verkleinern“: im angedockten Modus wird die Arbeitsfläche verkleinert, Fenster bleiben vollständig sichtbar.
+  Das Ubuntu-Dock wandert nach links, solange die Tastatur sichtbar ist.
 - Schwebend-Modus: frei verschiebbar (Griffleiste), Größe über die Ecke unten rechts, einstellbare Deckkraft.
+- Vorschlagsleiste, Autokorrektur (Rücktaste macht sie rückgängig) und unsichtbar angepasste Trefferflächen,
+  Deutsch und Englisch. Gelernte Wörter bleiben lokal, in Passwortfeldern wird nichts gelernt.
+- Umschalttasten: antippen = für die nächste Taste, gehalten = solange gedrückt.
 - Einstellungen direkt in der Tastatur (Zahnrad) oder im Erweiterungen-Programm; beide nutzen dieselben Einstellungen.
 - Tastenhöhe in Millimetern (Standard 11,5 mm), umgerechnet über die physische Bildschirmgröße.
 
@@ -21,8 +26,15 @@ Bild↑/Bild↓, Pfeiltasten, AltGr-Zeichen, QWERTZ oder QWERTY.
     # einmal ab- und wieder anmelden (Wayland), dann:
     gnome-extensions enable tablet-osk@kruegertim
 
-Deinstallation: `gnome-extensions disable tablet-osk@kruegertim` und den Ordner
-`~/.local/share/gnome-shell/extensions/tablet-osk@kruegertim` löschen.
+Aktualisieren: `git pull && ./install.sh`, danach ab- und wieder anmelden.
+Entfernen: `./install.sh --uninstall` (mit `--purge` auch Einstellungen und gelernte Wörter).
+
+Installierbares Zip (ohne Git auf dem Zielgerät): `packaging/build-zip.sh` erzeugt
+`dist/tablet-osk@kruegertim.shell-extension.zip`, installieren mit
+`gnome-extensions install --force <zip>`. Details in `packaging/README.md`.
+
+Ausführliche Anleitung für das Tablet: [docs/installation-miix.md](docs/installation-miix.md).
+Testliste zum Abhaken: [docs/touch-test-checkliste.md](docs/touch-test-checkliste.md).
 
 ## Hinweise
 - Die eingebaute GNOME-Bildschirmtastatur wird unterdrückt, solange die Erweiterung aktiv ist.
