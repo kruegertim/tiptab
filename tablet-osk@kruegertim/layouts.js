@@ -109,7 +109,9 @@ function bottomRow() {
         mod('Ctrl', 'Strg', 'ctrl', 1.25, {labelPos: 'tl'}),
         mod('Super', '◆', 'super', 1),
         mod('Alt', 'Alt', 'alt', 1, {labelPos: 'tl'}),
-        {id: 'space', w: 5.75, type: 'char', char: ' ', shiftChar: ' ', label: '', repeat: true, space: true},
+        // Fn+Space opens the settings panel (gear shown as the Fn label).
+        {id: 'space', w: 5.75, type: 'char', char: ' ', shiftChar: ' ', label: '', repeat: true, space: true,
+            fnAction: 'settings', fnIcon: 'emblem-system-symbolic'},
         mod('AltGr', 'AltGr', 'altgr', 1, {labelPos: 'tl'}),
         {id: 'Hide', w: 1, type: 'hide', icon: 'keyboard-hide-symbolic', special: true},
         sp('Left', '←', 'Left', 1, {repeat: true, fnKeysym: 'Home', fnLabel: 'Pos1'}),

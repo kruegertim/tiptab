@@ -36,15 +36,6 @@
     background-color: transparent;
 }
 
-.tosk-suggest-gear {
-    color: #b8b8bc;
-    border-radius: 6px;
-}
-
-.tosk-suggest-gear:active {
-    background-color: #3a3a3c;
-    color: #ffffff;
-}
 
 .tosk-suggest-divider {
     background-color: rgba(255, 255, 255, 0.22);

@@ -1,7 +1,7 @@
 // OskKeyboard: the key grid widget.
 //
 //   [grab bar (floating mode only)]
-//   suggestion bar: gear | slot 0 | slot 1 (emphasised) | slot 2
+//   suggestion bar: slot 0 | slot 1 (emphasised) | slot 2 (hidden when suggestions are off)
 //   rows of keys
 //   [footer with resize grip (floating mode only)]
 //
@@ -509,6 +509,7 @@ export const OskKeyboard = GObject.registerClass({
 
         this._buildHandle();
         this._buildSuggestionBar();
+        this._bar.visible = this._settings.get_boolean('suggestions');
         this._rowsBox = new St.BoxLayout({vertical: true, x_expand: true, style_class: 'tosk-rows'});
         this.add_child(this._rowsBox);
         this._buildFooter();
@@ -519,6 +520,7 @@ export const OskKeyboard = GObject.registerClass({
             'changed::layout', () => this._rebuild(),
             'changed::show-f-row', () => this._rebuild(),
             'changed::label-brightness', () => this._applyContainerStyle(),
+            'changed::suggestions', () => this._syncBarVisible(),
             'changed::super-symbol', () => {
                 const sym = this._readSuperSymbol();
                 if (sym !== this._superSymbol) {
@@ -602,7 +604,6 @@ export const OskKeyboard = GObject.registerClass({
         this._gripH = Math.max(18, Math.round(h * 0.45));
         this._barH = Math.max(36, Math.round(h * 0.7));
         const btnW = Math.max(36, Math.round(h * 0.9));
-        const gearW = Math.max(this._barH, Math.round(h * 1.1));
 
         this._applyContainerStyle();
         this._rowsBox.style = `spacing: ${this._gap}px; padding-top: ${this._gap}px;`;
@@ -611,10 +612,7 @@ export const OskKeyboard = GObject.registerClass({
         this._grip.set_size(Math.max(32, Math.round(h * 0.9)), 5);
 
         this._bar.height = this._barH;
-        this._gear.width = gearW;
-        this._gearIcon.icon_size = Math.round(this._barH * 0.5);
         const divH = Math.round(this._barH * 0.5);
-        this._gearDivider.set_size(1, divH);
         const font = Math.round(this._barH * 0.42);
         for (const slot of this._slots) {
             slot.divider?.set_size(1, divH);
@@ -632,7 +630,8 @@ export const OskKeyboard = GObject.registerClass({
 
     get preferredHeight() {
         const n = this._rows.length;
-        let height = this._barH + this._gap + n * this._keyHeight +
+        const bar = this._bar.visible ? this._barH : 0;
+        let height = bar + this._gap + n * this._keyHeight +
             Math.max(0, n - 1) * this._gap + this._pad;
         if (this._floating)
             height += 2 * this._gripH + 2 * FLOAT_BORDER_PX;
@@ -664,7 +663,6 @@ export const OskKeyboard = GObject.registerClass({
         this._extraMods = null;
         for (const k of this._keys)
             k.resetPress();
-        this._gear.remove_style_pseudo_class('active');
         for (const s of this._slots)
             s.remove_style_pseudo_class('active');
         this._injector?.releaseAll();
@@ -774,35 +772,8 @@ export const OskKeyboard = GObject.registerClass({
         });
         this._bar._toskTarget = this._noopTarget; // swipe-down also works on the bar
 
-        this._gear = new St.Widget({
-            style_class: 'tosk-suggest-gear',
-            layout_manager: new Clutter.BinLayout(),
-            reactive: true,
-            can_focus: false,
-            track_hover: false,
-            x_expand: false, // explicit: the divider child would propagate expand
-            y_expand: true,
-        });
-        this._gearIcon = new St.Icon({
-            icon_name: 'emblem-system-symbolic',
-            x_expand: true, y_expand: true, x_align: C, y_align: C,
-        });
-        this._gear.add_child(this._gearIcon);
-        this._gearDivider = new St.Widget({
-            style_class: 'tosk-suggest-divider',
-            x_expand: true, y_expand: true, x_align: E, y_align: C,
-        });
-        this._gear.add_child(this._gearDivider);
-        this._gear._toskTarget = {
-            down: () => this._gear.add_style_pseudo_class('active'),
-            up: () => {
-                this._gear.remove_style_pseudo_class('active');
-                this.emit('settings-request');
-            },
-            cancel: () => this._gear.remove_style_pseudo_class('active'),
-        };
-        this._bar.add_child(this._gear);
-
+        // No gear here: the settings panel opens with Fn+Space. The bar is shown
+        // only while the 'suggestions' setting is on (see _syncBarVisible()).
         this._slotsBox = new St.BoxLayout({x_expand: true, y_expand: true});
         this._slotsBox.layout_manager.homogeneous = true;
         this._slots = [];
@@ -822,6 +793,17 @@ export const OskKeyboard = GObject.registerClass({
         }
         this._bar.add_child(this._slotsBox);
         this.add_child(this._bar);
+    }
+
+    // Without suggestions the bar goes away entirely and the keyboard (and the
+    // reserved work area) gets shorter by its height; autocorrect works without it.
+    _syncBarVisible() {
+        const visible = this._settings.get_boolean('suggestions');
+        if (this._bar.visible === visible)
+            return;
+        this._bar.visible = visible;
+        this.queue_relayout();
+        this.emit('layout-changed');
     }
 
     _renderSuggestions() {
@@ -1117,7 +1099,8 @@ export const OskKeyboard = GObject.registerClass({
     }
 
     _isCombo(def) {
-        return this._shortcutModifiers().length > 0 || (this._modActive('fn') && !!def.fnKeysym);
+        return this._shortcutModifiers().length > 0 ||
+            (this._modActive('fn') && !!(def.fnKeysym || def.fnAction));
     }
 
     _resolveKey(key, st) {
@@ -1389,6 +1372,11 @@ export const OskKeyboard = GObject.registerClass({
         const mods = this._shortcutModifiers();
         const shift = this._modActive('shift');
         const withShift = shift ? [Clutter.KEY_Shift_L, ...mods] : mods;
+
+        if (this._modActive('fn') && def.fnAction === 'settings') {
+            this.emit('settings-request');
+            return;
+        }
 
         if (this._modActive('fn') && def.fnKeysym) {
             this._injector.tap(resolveKeyval(def.fnKeysym), withShift);
