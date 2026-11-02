@@ -16,6 +16,7 @@ const OPACITY_THROTTLE_MS = 60;
 const MIN_ROW_MM = 9;
 const HOLD_MIN_MS = 300;
 const HOLD_MAX_MS = 2000;
+const TOUCH_SCROLL_SLOP_PX = 12; // vertical finger travel before the panel scrolls
 const HOLD_STEP_MS = 100;
 const HOLD_DEBOUNCE_MS = 150;
 const CLEAR_CONFIRM_MS = 3000;
@@ -122,9 +123,14 @@ export const SettingsPanel = GObject.registerClass({
         this._buildHeader();
         this._buildRows();
 
-        // Swallow presses on the background so they never reach the keys underneath.
-        for (const sig of ['button-press-event', 'button-release-event', 'touch-event'])
-            this.connect(sig, () => Clutter.EVENT_STOP);
+        // Swallow presses on the panel background so they never reach the chrome below.
+        // Only events whose source is the panel itself: on GNOME 49+ St.Button/Slider use
+        // Clutter.ClickGesture, which is cancelled when an ancestor stops the bubbling
+        // events of its sequence (taps on buttons would never emit 'clicked').
+        for (const sig of ['button-press-event', 'button-release-event', 'touch-event']) {
+            this.connect(sig, (_a, event) => global.stage.get_event_actor(event) === this
+                ? Clutter.EVENT_STOP : Clutter.EVENT_PROPAGATE);
+        }
 
         this._settings.connectObject(
             'changed::key-height-mm', () => this._syncKeyHeight(),
@@ -394,6 +400,63 @@ export const SettingsPanel = GObject.registerClass({
             child: columns,
         });
         this.add_child(this._scrollView);
+        this._enableTouchScroll(this._scrollView);
+    }
+
+    // St.ScrollView has no touch panning in GNOME Shell: without this, rows below the
+    // fold are unreachable on a touchscreen. A vertical drag (one finger) scrolls; the
+    // control under the finger is released once the drag starts.
+    _enableTouchScroll(view) {
+        const T = Clutter.EventType;
+        let slot = null, y0 = 0, v0 = 0, dragging = false, pressed = null;
+        view.connect('captured-event', (_a, event) => {
+            const type = event.type();
+            if (type !== T.TOUCH_BEGIN && type !== T.TOUCH_UPDATE &&
+                type !== T.TOUCH_END && type !== T.TOUCH_CANCEL)
+                return Clutter.EVENT_PROPAGATE;
+            const evSlot = event.get_event_sequence()?.get_slot() ?? -1;
+            const [, y] = event.get_coords();
+            const adj = view.vadjustment;
+
+            if (type === T.TOUCH_BEGIN) {
+                if (slot === null) {
+                    slot = evSlot;
+                    y0 = y;
+                    v0 = adj.value;
+                    dragging = false;
+                    pressed = null;
+                    for (let a = global.stage.get_event_actor(event); a && a !== view; a = a.get_parent()) {
+                        if (a instanceof St.Button) {
+                            pressed = a;
+                            break;
+                        }
+                    }
+                }
+                return Clutter.EVENT_PROPAGATE;
+            }
+            if (evSlot !== slot)
+                return Clutter.EVENT_PROPAGATE;
+
+            if (type === T.TOUCH_UPDATE) {
+                if (!dragging && Math.abs(y - y0) > TOUCH_SCROLL_SLOP_PX &&
+                    adj.upper - adj.page_size > 0) {
+                    dragging = true;
+                    pressed?.fake_release?.();
+                }
+                if (!dragging)
+                    return Clutter.EVENT_PROPAGATE;
+                adj.value = Math.max(adj.lower,
+                    Math.min(adj.upper - adj.page_size, v0 - (y - y0)));
+                return Clutter.EVENT_STOP;
+            }
+
+            // TOUCH_END / TOUCH_CANCEL
+            const wasDragging = dragging;
+            slot = null;
+            dragging = false;
+            pressed = null;
+            return wasDragging ? Clutter.EVENT_STOP : Clutter.EVENT_PROPAGATE;
+        });
     }
 
     _row(title, control) {
