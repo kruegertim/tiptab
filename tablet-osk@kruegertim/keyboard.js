@@ -209,14 +209,27 @@ class OskKey extends St.Widget {
             const base = def.label;
             const shift = def.letter ? null : def.shiftLabel ?? null;
             const altgr = def.altgrLabel ?? null;
-            if (!shift && !altgr) {
-                // Plain letter (or single glyph): one big centred label.
+            if (!shift) {
+                // Letter (or single glyph): one big centred label, like every other
+                // letter key. Letters with an AltGr glyph (Q @, E €, M µ) add it small
+                // in the bottom-right grid slot, so the letter stays centred.
                 this._main = this._corner(C, C, 'tosk-label-main', base);
                 this._glyphs = {base: this._main, shift: null, altgr: null};
+                if (altgr) {
+                    const a = new St.Label({text: altgr, style_class: 'tosk-glyph tosk-glyph-altgr'});
+                    this._gridLayout = new GlyphGridLayout({topLeft: null, bottomLeft: null, bottomRight: a});
+                    const grid = new St.Widget({
+                        x_expand: true,
+                        y_expand: true,
+                        layout_manager: this._gridLayout,
+                    });
+                    grid.add_child(a);
+                    this.add_child(grid);
+                    this._glyphs.altgr = a;
+                }
             } else {
                 // Real keycap arrangement: shift top-left, base bottom-left, AltGr
-                // bottom-right. Letters with an AltGr glyph (Q @, E €, M µ): letter
-                // top-left, AltGr bottom-right (like the printed ThinkPad keycaps).
+                // bottom-right.
                 this._multi = true;
                 const glyph = (cls, text) => new St.Label({text, style_class: cls});
                 const g = {base: glyph('tosk-glyph', base), shift: null, altgr: null};
@@ -313,6 +326,10 @@ class OskKey extends St.Widget {
             }
             this._gridLayout.setFontPx(glyph);
         } else if (this._main) {
+            if (this._glyphs?.altgr) {
+                this._glyphs.altgr.style = `font-size: ${glyph}px;`;
+                this._gridLayout.setFontPx(glyph);
+            }
             let size = big;
             if (this._mainKind === 'small')
                 size = Math.round(h * (narrow ? 0.2 : 0.24));
