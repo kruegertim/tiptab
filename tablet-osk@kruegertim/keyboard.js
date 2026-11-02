@@ -41,10 +41,11 @@ const SWIPE_COMMIT = 0.5;   // on release: still this far down -> hide, else sna
 const DIM_OPACITY = 115;    // ~45 % for inactive keycap glyphs
 
 const LATCH_MODIFIERS = ['altgr', 'fn', 'ctrl', 'alt', 'super'];
-const SUPER_SYMBOLS = ['fish', 'diamond', 'text'];
+const SUPER_SYMBOLS = ['fish', 'tux', 'diamond', 'text'];
 
-const FISH_ICON_FILE = Gio.File.new_for_uri(import.meta.url)
-    .get_parent().get_child('icons').get_child('fish-symbolic.svg');
+const ICONS_DIR = Gio.File.new_for_uri(import.meta.url).get_parent().get_child('icons');
+const FISH_ICON_FILE = ICONS_DIR.get_child('fish-symbolic.svg');
+const TUX_ICON_FILE = ICONS_DIR.get_child('tux-symbolic.svg');
 
 function resolveKeyval(name) {
     if (!name)
@@ -175,7 +176,9 @@ class OskKey extends St.Widget {
             this.add_style_class_name('tosk-enter-top');
         if (def.enterPart === 'bottom')
             this.add_style_class_name('tosk-enter-bottom');
-        this.extendDown = def.enterPart === 'top';
+        // ISO Enter: the lower half reaches up through the row gap to join the upper
+        // half. (Extending the upper half down instead would cover the gap above '#'.)
+        this.extendUp = def.enterPart === 'bottom';
 
         this._buildGlyphs(def, keyboard._superSymbol);
 
@@ -264,7 +267,7 @@ class OskKey extends St.Widget {
                 this._main = this._corner(C, C, 'tosk-label-main', '◆');
             } else {
                 this._mainIcon = new St.Icon({
-                    gicon: new Gio.FileIcon({file: FISH_ICON_FILE}),
+                    gicon: new Gio.FileIcon({file: superSymbol === 'tux' ? TUX_ICON_FILE : FISH_ICON_FILE}),
                     style_class: 'tosk-icon-main tosk-icon-fish',
                     x_expand: true, y_expand: true, x_align: C, y_align: C,
                 });
@@ -426,8 +429,8 @@ class KeyRow extends St.Widget {
             const x1 = content.x1 + Math.round(cum * unit);
             cum += child.units;
             const x2 = Math.max(x1, content.x1 + Math.round(cum * unit) - gap);
-            const y2 = content.y2 + (child.extendDown ? gap : 0);
-            child.allocate(Clutter.ActorBox.new(x1, content.y1, x2, y2));
+            const y1 = content.y1 - (child.extendUp ? gap : 0);
+            child.allocate(Clutter.ActorBox.new(x1, y1, x2, content.y2));
         }
     }
 });
@@ -532,6 +535,7 @@ export const OskKeyboard = GObject.registerClass({
         this._rowsBox = new St.BoxLayout({vertical: true, x_expand: true, style_class: 'tosk-rows'});
         this.add_child(this._rowsBox);
         this._buildFooter();
+        this._syncBarPosition(false);
 
         this.connect('captured-event', (_a, event) => this._onCapturedEvent(event));
 
@@ -540,6 +544,7 @@ export const OskKeyboard = GObject.registerClass({
             'changed::show-f-row', () => this._rebuild(),
             'changed::label-brightness', () => this._applyContainerStyle(),
             'changed::suggestions', () => this._syncBarVisible(),
+            'changed::suggestion-bar-position', () => this._syncBarPosition(),
             'changed::super-symbol', () => {
                 const sym = this._readSuperSymbol();
                 if (sym !== this._superSymbol) {
@@ -625,7 +630,7 @@ export const OskKeyboard = GObject.registerClass({
         const btnW = Math.max(36, Math.round(h * 0.9));
 
         this._applyContainerStyle();
-        this._rowsBox.style = `spacing: ${this._gap}px; padding-top: ${this._gap}px;`;
+        this._applyRowsStyle();
 
         this._handle.height = this._gripH;
         this._grip.set_size(Math.max(32, Math.round(h * 0.9)), 5);
@@ -649,7 +654,8 @@ export const OskKeyboard = GObject.registerClass({
 
     get preferredHeight() {
         const n = this._rows.length;
-        const bar = this._bar.visible ? this._barH : 0;
+        const bar = this._bar.visible
+            ? this._barH + (this._barAtBottom ? this._gap : 0) : 0;
         let height = bar + this._gap + n * this._keyHeight +
             Math.max(0, n - 1) * this._gap + this._pad;
         if (this._floating)
@@ -814,6 +820,32 @@ export const OskKeyboard = GObject.registerClass({
         this.add_child(this._bar);
     }
 
+    get _barAtBottom() {
+        return this._hasKey('suggestion-bar-position') &&
+            this._settings.get_string('suggestion-bar-position') === 'bottom';
+    }
+
+    // Gap above the first row always; with the bar below the keys also one below the
+    // last row (between keys and bar).
+    _applyRowsStyle() {
+        const g = this._gap;
+        const below = this._barAtBottom && this._bar.visible ? g : 0;
+        this._rowsBox.style = `spacing: ${g}px; padding-top: ${g}px; padding-bottom: ${below}px;`;
+    }
+
+    // Suggestion bar above (default) or below the keys; live.
+    _syncBarPosition(notify = true) {
+        if (this._barAtBottom)
+            this.set_child_above_sibling(this._bar, this._rowsBox);
+        else
+            this.set_child_below_sibling(this._bar, this._rowsBox);
+        this._applyRowsStyle();
+        if (notify) {
+            this.queue_relayout();
+            this.emit('layout-changed');
+        }
+    }
+
     // Without suggestions the bar goes away entirely and the keyboard (and the
     // reserved work area) gets shorter by its height; autocorrect works without it.
     _syncBarVisible() {
@@ -821,6 +853,7 @@ export const OskKeyboard = GObject.registerClass({
         if (this._bar.visible === visible)
             return;
         this._bar.visible = visible;
+        this._applyRowsStyle();
         this.queue_relayout();
         this.emit('layout-changed');
     }

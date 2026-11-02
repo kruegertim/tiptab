@@ -108,6 +108,7 @@ export default class TabletOskExtension extends Extension {
 
         this._settings.connectObject(
             'changed::key-height-mm', () => this._relayout(),
+            'changed::keep-key-aspect', () => this._relayout(),
             'changed::show-f-row', () => this._afterRebuild(),
             'changed::layout', () => this._afterRebuild(),
             'changed::mode', () => this._applyMode(),
@@ -219,7 +220,10 @@ export default class TabletOskExtension extends Extension {
             this._settings.get_double('key-height-mm'));
     }
 
+    // 0 when the keep-key-aspect setting is off (old behaviour: full width, flatter keys).
     _referenceKeyPx() {
+        if (!this._settings.get_boolean('keep-key-aspect'))
+            return 0;
         return this._metrics.keyHeightPx(Main.layoutManager.primaryIndex, REFERENCE_KEY_MM);
     }
 

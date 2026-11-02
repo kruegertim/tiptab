@@ -78,6 +78,8 @@ export default class TabletOskPreferences extends ExtensionPreferences {
         });
         settings.bind('key-height-mm', heightRow, 'value', Gio.SettingsBindFlags.DEFAULT);
         layoutGroup.add(heightRow);
+        layoutGroup.add(switchRow(settings, 'keep-key-aspect', 'Proportionen beibehalten',
+            'Unter 13 mm wird die angedockte Tastatur schmaler, statt die Tasten flacher zu machen'));
 
         // --- Mode / position ---
         const modeGroup = new Adw.PreferencesGroup({title: 'Modus'});
@@ -203,6 +205,7 @@ export default class TabletOskPreferences extends ExtensionPreferences {
 
         modGroup.add(comboRow(window, settings, 'super-symbol', 'Symbol der Super-Taste', [
             ['fish', 'Fisch'],
+            ['tux', 'Tux'],
             ['diamond', 'Raute'],
             ['text', 'Super'],
         ]));
@@ -256,7 +259,11 @@ export default class TabletOskPreferences extends ExtensionPreferences {
         page.add(predictGroup);
 
         predictGroup.add(switchRow(settings, 'suggestions', 'Vorschläge',
-            'Drei Wortvorschläge über den Tasten; nach einem Leerzeichen das wahrscheinlich nächste Wort'));
+            'Drei Wortvorschläge über oder unter den Tasten; nach einem Leerzeichen das wahrscheinlich nächste Wort'));
+        predictGroup.add(comboRow(window, settings, 'suggestion-bar-position', 'Position der Vorschlagsleiste', [
+            ['top', 'Oben (über den Tasten)'],
+            ['bottom', 'Unten (unter den Tasten)'],
+        ]));
         predictGroup.add(switchRow(settings, 'autocorrect', 'Autokorrektur',
             'Tippfehler werden bei Leerzeichen oder Satzzeichen korrigiert; Rücktaste direkt danach ' +
             'stellt das getippte Wort wieder her'));

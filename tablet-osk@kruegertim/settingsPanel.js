@@ -145,8 +145,11 @@ export const SettingsPanel = GObject.registerClass({
             'changed::auto-show', () => this._syncSwitch(this._autoSwitch, 'auto-show'),
             'changed::hide-after-submit', () => this._syncSwitch(this._submitSwitch, 'hide-after-submit'),
             'changed::move-dock-left', () => this._syncSwitch(this._dockSwitch, 'move-dock-left'),
+            'changed::keep-key-aspect', () => this._syncSwitch(this._aspectSwitch, 'keep-key-aspect'),
             'changed::floating-opacity', () => this._syncOpacity(),
             'changed::label-brightness', () => this._syncBrightness(),
+            'changed::suggestion-bar-position',
+            () => this._barPosSeg.setActive(this._settings.get_string('suggestion-bar-position')),
             'changed::super-symbol', () => this._superSeg.setActive(this._settings.get_string('super-symbol')),
             'changed::modifier-hold-release', () => this._syncHoldRelease(),
             'changed::modifier-hold-ms', () => this._syncHoldMs(),
@@ -297,6 +300,10 @@ export const SettingsPanel = GObject.registerClass({
         this._dockSwitch = this._switch('move-dock-left');
         r.dock = this._row('Dock nach links verschieben', this._dockSwitch);
 
+        // Proportionen beibehalten (unter 13 mm schmalere Tastatur statt flacherer Tasten)
+        this._aspectSwitch = this._switch('keep-key-aspect');
+        r.aspect = this._row('Proportionen beibehalten', this._aspectSwitch);
+
         // Deckkraft
         {
             const {row, valueLabel, slider} = this._sliderRow('Deckkraft', null);
@@ -329,7 +336,7 @@ export const SettingsPanel = GObject.registerClass({
 
         // Symbol der Super-Taste
         {
-            const seg = this._segmented([['fish', 'Fisch'], ['diamond', 'Raute'], ['text', 'Super']],
+            const seg = this._segmented([['fish', 'Fisch'], ['tux', 'Tux'], ['diamond', 'Raute'], ['text', 'Super']],
                 id => this._settings.set_string('super-symbol', id), {minRows: 1.6});
             this._superSeg = seg;
             r.superSym = this._row('Super-Taste', seg.actor);
@@ -359,6 +366,13 @@ export const SettingsPanel = GObject.registerClass({
 
         this._suggestSwitch = this._switch('suggestions');
         r.suggest = this._row('Vorschläge', this._suggestSwitch);
+
+        {
+            const seg = this._segmented([['top', 'Oben'], ['bottom', 'Unten']],
+                id => this._settings.set_string('suggestion-bar-position', id), {minRows: 1.6});
+            this._barPosSeg = seg;
+            r.barPos = this._row('Position der Vorschlagsleiste', seg.actor);
+        }
 
         this._autocorrectSwitch = this._switch('autocorrect');
         r.autocorrect = this._row('Autokorrektur', this._autocorrectSwitch);
@@ -390,14 +404,14 @@ export const SettingsPanel = GObject.registerClass({
 
         this._rows = r;
         // single-column order (contract order) and two-column order (left | right)
-        this._order1 = [r.keyHeight, r.mode, r.fRow, r.layout, r.shrink, r.auto, r.submit, r.dock, r.opacity,
+        this._order1 = [r.keyHeight, r.aspect, r.mode, r.fRow, r.layout, r.shrink, r.auto, r.submit, r.dock, r.opacity,
             r.brightness, r.superSym, r.holdRelease, r.holdMs,
-            r.predictHeader, r.suggest, r.autocorrect, r.hitareas, r.language, r.clearDict];
+            r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict];
         this._order2 = [
-            [r.keyHeight, r.layout, r.fRow, r.brightness, r.auto, r.submit, r.superSym, r.holdRelease,
+            [r.keyHeight, r.aspect, r.layout, r.fRow, r.brightness, r.auto, r.submit, r.superSym, r.holdRelease,
                 r.holdMs],
             [r.mode, r.shrink, r.opacity, r.dock,
-                r.predictHeader, r.suggest, r.autocorrect, r.hitareas, r.language, r.clearDict],
+                r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict],
         ];
 
         this._colA = new St.BoxLayout({vertical: true, x_expand: true, style_class: 'tosk-settings-column'});
@@ -835,9 +849,11 @@ export const SettingsPanel = GObject.registerClass({
         this._syncSwitch(this._autoSwitch, 'auto-show');
         this._syncSwitch(this._submitSwitch, 'hide-after-submit');
         this._syncSwitch(this._dockSwitch, 'move-dock-left');
+        this._syncSwitch(this._aspectSwitch, 'keep-key-aspect');
         this._syncOpacity();
         this._syncBrightness();
         this._superSeg.setActive(this._settings.get_string('super-symbol'));
+        this._barPosSeg.setActive(this._settings.get_string('suggestion-bar-position'));
         this._syncHoldRelease();
         this._syncHoldMs();
         this._syncSwitch(this._suggestSwitch, 'suggestions');
