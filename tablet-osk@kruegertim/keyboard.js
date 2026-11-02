@@ -1016,7 +1016,7 @@ export const OskKeyboard = GObject.registerClass({
 
     _resolveKey(key, st) {
         const def = key.def;
-        if (!this._keyResolver || def.type !== 'char' || def.space)
+        if (!this._keyResolver || def.type !== 'char' || def.space || !def.letter)
             return null;
         if (['ctrl', 'alt', 'super', 'altgr', 'fn'].some(m => this._modActive(m)))
             return null;
@@ -1303,6 +1303,8 @@ export const OskKeyboard = GObject.registerClass({
                     const c = def.letter ? def.char.toLowerCase() : def.char;
                     this._injector.typeChar(c, withShift);
                 }
+                // Let listeners (prediction) know the text/selection may have changed (Strg+A, Strg+V …).
+                this.emit('key-sent', 'shortcut');
                 return;
             }
             const str = this._charFor(def);
