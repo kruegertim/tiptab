@@ -1,4 +1,7 @@
-# Tablet OSK – Bildschirmtastatur für GNOME (Ubuntu 24.04, GNOME Shell 46, Wayland)
+# tiptab – Bildschirmtastatur für GNOME (Ubuntu 24.04, GNOME Shell 46, Wayland)
+
+An On-Screen-Keyboard for tablet use, optimized right now for the Lenovo Miix 520 tablet and GNOME Wayland.
+(GNOME-Erweiterung `tablet-osk@kruegertim`.)
 
 Vollständige Bildschirmtastatur im ThinkPad-Stil: F-Reihe mit Fn-Ebene (Medientasten), Pos1/Ende/Einfg/Entf,
 Bild↑/Bild↓, Pfeiltasten, AltGr-Zeichen, QWERTZ oder QWERTY.
@@ -35,5 +38,5 @@ Aufbau der Module: siehe `CONTRACT.md`.
   neue Tastenbeschriftung, Halte-Logik für Umschalttasten.
 
 ## Lizenz
-Code: Lizenz noch offen (TBD). Wörterbuchdaten (Branch `wip/next`, `predict/data/`): CC-BY-SA 4.0,
+Code: GNU General Public License v3.0 (siehe `LICENSE`). Wörterbuchdaten (Branch `wip/next`, `predict/data/`): CC-BY-SA 4.0,
 Details in `tools/DATA_LICENSES.md`.
