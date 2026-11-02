@@ -67,6 +67,8 @@ const S = Clutter.ActorAlign.START, E = Clutter.ActorAlign.END, C = Clutter.Acto
 // characters drawn from fallback fonts (´ § µ „ …) or with accents/descenders sit on
 // exactly the same lines as all others. The baselines come from the primary font's
 // ascent/descent, so they are identical on every key of a given height.
+const GLYPH_FONT_FAMILIES = 'Liberation Sans,Nimbus Sans,Noto Sans,sans-serif';
+
 const GlyphGridLayout = GObject.registerClass(
 class TabletOskGlyphGridLayout extends Clutter.LayoutManager {
     _init(slots) {
@@ -86,8 +88,8 @@ class TabletOskGlyphGridLayout extends Clutter.LayoutManager {
         if (px === this._fontPx)
             return;
         this._fontPx = px;
-        const family = St.Settings.get().font_name ?? 'Sans';
-        const desc = Pango.FontDescription.from_string(family);
+        // Same family list as .tosk-keyboard in stylesheet.css.
+        const desc = Pango.FontDescription.from_string(GLYPH_FONT_FAMILIES);
         desc.set_absolute_size(px * Pango.SCALE);
         desc.set_weight(Pango.Weight.BOLD); // .tosk-glyph is bold
         this._desc = desc;

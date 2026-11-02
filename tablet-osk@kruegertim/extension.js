@@ -18,6 +18,10 @@ import {PredictController} from './predictController.js';
 
 const ANIMATION_TIME = 200;
 const MIN_FLOATING_KEY_MM = 6;
+// Key aspect ratio reference: at this key height the docked keyboard spans the full
+// screen width. Lower key heights make the keyboard narrower instead of the keys
+// flatter (same width/height ratio as at 13 mm).
+const REFERENCE_KEY_MM = 13;
 
 export default class TabletOskExtension extends Extension {
     enable() {
@@ -215,6 +219,10 @@ export default class TabletOskExtension extends Extension {
             this._settings.get_double('key-height-mm'));
     }
 
+    _referenceKeyPx() {
+        return this._metrics.keyHeightPx(Main.layoutManager.primaryIndex, REFERENCE_KEY_MM);
+    }
+
     _applyMode() {
         if (!this._container)
             return;
@@ -241,7 +249,9 @@ export default class TabletOskExtension extends Extension {
         if (!monitor || !this._keyboard)
             return;
         const minPx = this._metrics.keyHeightPx(Main.layoutManager.primaryIndex, MIN_FLOATING_KEY_MM);
-        const keyPx = Math.max(minPx, Math.round(this._dockedKeyPx() * width / monitor.width));
+        // Same key aspect ratio as docked: never flatter than at REFERENCE_KEY_MM.
+        const dockedPx = Math.max(this._dockedKeyPx(), this._referenceKeyPx());
+        const keyPx = Math.max(minPx, Math.round(dockedPx * width / monitor.width));
         this._keyboard.setKeyHeight(keyPx);
         this._container.height = Math.round(this._keyboard.preferredHeight);
     }
@@ -254,13 +264,29 @@ export default class TabletOskExtension extends Extension {
             return;
 
         if (this._isFloating) {
+            this._keyboard.width = -1;
+            this._keyboard.x_align = Clutter.ActorAlign.FILL;
+            this._container.remove_style_class_name('tosk-container-narrow');
             const width = this._floating.geometry?.width ?? Math.round(monitor.width * 0.7);
             this._applyFloatingHeight(width);
             this._floating.reposition();
             return;
         }
 
-        this._keyboard.setKeyHeight(this._dockedKeyPx());
+        const keyPx = this._dockedKeyPx();
+        this._keyboard.setKeyHeight(keyPx);
+        // Below the reference height the keyboard gets narrower (centred), keeping
+        // the key aspect ratio; the container (background, input) stays full width.
+        const refPx = this._referenceKeyPx();
+        if (keyPx < refPx) {
+            this._keyboard.width = Math.round(monitor.width * keyPx / refPx);
+            this._keyboard.x_align = Clutter.ActorAlign.CENTER;
+            this._container.add_style_class_name('tosk-container-narrow');
+        } else {
+            this._keyboard.width = -1;
+            this._keyboard.x_align = Clutter.ActorAlign.FILL;
+            this._container.remove_style_class_name('tosk-container-narrow');
+        }
         const height = Math.min(Math.round(this._keyboard.preferredHeight),
             Math.round(monitor.height * 0.6));
         this._container.set_size(monitor.width, height);
