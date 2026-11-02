@@ -8,6 +8,16 @@
     <value nick="docked" value="0"/>
     <value nick="floating" value="1"/>
   </enum>
+  <enum id="org.gnome.shell.extensions.tablet-osk.PredictionLanguage">
+    <value nick="auto" value="0"/>
+    <value nick="de" value="1"/>
+    <value nick="en" value="2"/>
+  </enum>
+  <enum id="org.gnome.shell.extensions.tablet-osk.SuperSymbol">
+    <value nick="fish" value="0"/>
+    <value nick="diamond" value="1"/>
+    <value nick="text" value="2"/>
+  </enum>
   <schema id="org.gnome.shell.extensions.tablet-osk" path="/org/gnome/shell/extensions/tablet-osk/">
     <key name="layout" enum="org.gnome.shell.extensions.tablet-osk.Layout">
       <default>'qwertz'</default>
@@ -71,6 +81,39 @@
     <key name="floating-width" type="i">
       <default>-1</default>
       <summary>Floating panel width in logical px (-1 = 70% of monitor width); keys scale with it</summary>
+    </key>
+    <key name="suggestions" type="b">
+      <default>true</default>
+      <summary>Show word suggestions in the suggestion bar</summary>
+    </key>
+    <key name="autocorrect" type="b">
+      <default>true</default>
+      <summary>Correct the current word automatically on space/punctuation (BackSpace right after reverts)</summary>
+    </key>
+    <key name="dynamic-hitareas" type="b">
+      <default>true</default>
+      <summary>Enlarge the touch area of likely next letters (invisible, iOS-like)</summary>
+    </key>
+    <key name="prediction-language" enum="org.gnome.shell.extensions.tablet-osk.PredictionLanguage">
+      <default>'auto'</default>
+      <summary>Prediction language (auto: QWERTZ = German, QWERTY = English)</summary>
+    </key>
+    <key name="clear-userdict-request" type="i">
+      <default>0</default>
+      <summary>Incremented to request clearing the learned user dictionary (value itself is meaningless)</summary>
+    </key>
+    <key name="super-symbol" enum="org.gnome.shell.extensions.tablet-osk.SuperSymbol">
+      <default>'fish'</default>
+      <summary>Label of the Super key: fish, diamond or the text "Super"</summary>
+    </key>
+    <key name="modifier-hold-release" type="b">
+      <default>true</default>
+      <summary>A modifier held down acts while held and is released on key-up after modifier-hold-ms</summary>
+    </key>
+    <key name="modifier-hold-ms" type="i">
+      <range min="300" max="2000"/>
+      <default>1000</default>
+      <summary>Hold duration in ms after which a held modifier is released on key-up</summary>
     </key>
   </schema>
 </schemalist>
