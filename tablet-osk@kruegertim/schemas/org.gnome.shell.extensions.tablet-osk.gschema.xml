@@ -30,6 +30,10 @@
       <default>true</default>
       <summary>Show automatically when a text field gets focus</summary>
     </key>
+    <key name="hide-after-submit" type="b">
+      <default>true</default>
+      <summary>After Enter in a single-line field (form/message sent) or Esc, hide an auto-shown keyboard</summary>
+    </key>
     <key name="ignore-physical-keyboard" type="b">
       <default>false</default>
       <summary>Testing: auto-show even while an external keyboard is connected</summary>

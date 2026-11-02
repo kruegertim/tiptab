@@ -50,6 +50,7 @@ export default class TabletOskExtension extends Extension {
             },
             'settings-request', () => this._setPanelVisible(!this._panel?.visible),
             'layout-changed', () => this._afterRebuild(),
+            'key-sent', (_k, name) => this._visibility?.onKeySent(name),
             this);
 
         this._floating = new FloatingController({

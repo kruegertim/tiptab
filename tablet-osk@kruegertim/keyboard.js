@@ -281,6 +281,7 @@ export const OskKeyboard = GObject.registerClass({
         'hide-request': {},
         'settings-request': {},
         'layout-changed': {}, // emitted after a rebuild (row count may change)
+        'key-sent': {param_types: [GObject.TYPE_STRING]}, // keysym name of special keys (Return, Escape, …)
     },
 }, class OskKeyboard extends St.BoxLayout {
     _init({settings}) {
@@ -745,8 +746,11 @@ export const OskKeyboard = GObject.registerClass({
 
         // special / enter
         const keyval = resolveKeyval(def.keysym);
-        if (keyval)
+        if (keyval) {
             this._injector.tap(keyval, withShift);
+            if (mods.length === 0)
+                this.emit('key-sent', def.keysym);
+        }
     }
 
     _charFor(def) {

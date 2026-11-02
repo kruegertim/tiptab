@@ -116,6 +116,7 @@ export const SettingsPanel = GObject.registerClass({
             'changed::layout', () => this._syncLayout(),
             'changed::shrink-workarea', () => this._syncSwitch(this._shrinkSwitch, 'shrink-workarea'),
             'changed::auto-show', () => this._syncSwitch(this._autoSwitch, 'auto-show'),
+            'changed::hide-after-submit', () => this._syncSwitch(this._submitSwitch, 'hide-after-submit'),
             'changed::floating-opacity', () => this._syncOpacity(),
             this);
 
@@ -252,6 +253,10 @@ export const SettingsPanel = GObject.registerClass({
         this._autoSwitch = this._switch('auto-show');
         r.auto = this._row('Automatisch einblenden', this._autoSwitch);
 
+        // Nach dem Absenden ausblenden
+        this._submitSwitch = this._switch('hide-after-submit');
+        r.submit = this._row('Nach dem Absenden ausblenden', this._submitSwitch);
+
         // Deckkraft
         {
             const {row, valueLabel, slider} = this._sliderRow('Deckkraft', null);
@@ -269,8 +274,8 @@ export const SettingsPanel = GObject.registerClass({
 
         this._rows = r;
         // single-column order (contract order) and two-column order (left | right)
-        this._order1 = [r.keyHeight, r.mode, r.fRow, r.layout, r.shrink, r.auto, r.opacity];
-        this._order2 = [[r.keyHeight, r.layout, r.fRow, r.auto], [r.mode, r.shrink, r.opacity]];
+        this._order1 = [r.keyHeight, r.mode, r.fRow, r.layout, r.shrink, r.auto, r.submit, r.opacity];
+        this._order2 = [[r.keyHeight, r.layout, r.fRow, r.auto], [r.mode, r.shrink, r.opacity, r.submit]];
 
         this._colA = new St.BoxLayout({vertical: true, x_expand: true, style_class: 'tosk-settings-column'});
         this._colB = new St.BoxLayout({vertical: true, x_expand: true, style_class: 'tosk-settings-column'});
@@ -564,6 +569,7 @@ export const SettingsPanel = GObject.registerClass({
         this._syncLayout();
         this._syncSwitch(this._shrinkSwitch, 'shrink-workarea');
         this._syncSwitch(this._autoSwitch, 'auto-show');
+        this._syncSwitch(this._submitSwitch, 'hide-after-submit');
         this._syncOpacity();
     }
 

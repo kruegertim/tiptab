@@ -29,7 +29,8 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 const LOG_PREFIX = '[tablet-osk]';
 
-const HIDE_DELAY_MS = 150;
+const HIDE_DELAY_MS = 400;     // focus-out debounce: Tab / tapping another field keeps the keyboard
+const SUBMIT_WINDOW_MS = 700;  // after Enter: content cleared within this window => 'sent'
 const TOGGLE_GRACE_MS = 300;   // TOGGLE right after a focus-in is treated as ON
 const DRAG_THRESHOLD = 40;     // px, mouse strip + handle
 const TOUCH_EDGE = 20;         // px from bottom edge where a touch swipe may start
@@ -227,6 +228,7 @@ class DragRecognizer {
     }
 
     destroy() {
+        this._clearSubmit();
         this.detach();
         this._onTrigger = null;
         this._shouldStart = null;
@@ -235,6 +237,8 @@ class DragRecognizer {
 
 export class VisibilityController {
     constructor({settings, show, hide, isVisible, getHandle, getKeyboardActor, physicalKeyboard}) {
+        this._submitTag = {};
+        this._submitId = 0;
         this._settings = settings;
         this._show = show;
         this._hide = hide;
@@ -483,6 +487,59 @@ export class VisibilityController {
         }
     }
 
+    // ---- smart auto-hide after submit / Escape ----
+
+    // Called by the coordinator for special keys the OSK sent (keysym names).
+    onKeySent(name) {
+        if (this._mode !== 'auto' || !this._isShown() ||
+            !this._settings.get_boolean('hide-after-submit'))
+            return;
+        if (name === 'Escape') {
+            this._cancelTimers();
+            this._doHide();
+            return;
+        }
+        if (name !== 'Return' && name !== 'KP_Enter')
+            return;
+        const shellText = this._isEditableText(global.stage.key_focus) ? global.stage.key_focus : null;
+        if (shellText ? !shellText.single_line_mode
+            : (Main.inputMethod.content_hints & Clutter.InputContentHintFlags.MULTILINE))
+            return; // multi-line: Enter is just a newline
+        this._clearSubmit();
+        this._submitShellText = shellText;
+        this._submitId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, SUBMIT_WINDOW_MS, () => {
+            this._submitId = 0;
+            this._checkSubmitCleared(true);
+            this._submitShellText = null;
+            return GLib.SOURCE_REMOVE;
+        });
+        // Apps report the new (possibly empty) content via surrounding text shortly after.
+        Main.inputMethod.connectObject('surrounding-text-set',
+            () => this._checkSubmitCleared(false), this._submitTag);
+    }
+
+    _checkSubmitCleared(final) {
+        if (!this._submitId && !final)
+            return;
+        const st = this._submitShellText;
+        const text = st ? st.text : Main.inputMethod._surroundingText;
+        if (typeof text === 'string' && text.length === 0 && this._mode === 'auto' && this._isShown()) {
+            this._clearSubmit();
+            this._cancelTimers();
+            this._doHide();
+        } else if (final) {
+            this._clearSubmit();
+        }
+    }
+
+    _clearSubmit() {
+        if (this._submitId) {
+            GLib.source_remove(this._submitId);
+            this._submitId = 0;
+        }
+        Main.inputMethod.disconnectObject(this._submitTag);
+    }
+
     // ---- focus tracking ----
 
     _onKeyFocusChanged() {
@@ -534,7 +591,9 @@ export class VisibilityController {
         if (!this._autoAllowed())
             return;
         if (this._isShown()) {
-            this._mode = 'auto';
+            // A manually opened keyboard is never auto-hidden (Tim's rule).
+            if (this._mode !== 'manual')
+                this._mode = 'auto';
             return;
         }
         if (this._showId)
@@ -543,10 +602,12 @@ export class VisibilityController {
             this._showId = 0;
             if (!this._wanted() || !this._autoAllowed())
                 return GLib.SOURCE_REMOVE;
-            if (this._isShown())
-                this._mode = 'auto';
-            else
+            if (this._isShown()) {
+                if (this._mode !== 'manual')
+                    this._mode = 'auto';
+            } else {
                 this._doShow('auto');
+            }
             return GLib.SOURCE_REMOVE;
         });
         GLib.Source.set_name_by_id(this._showId, '[tablet-osk] auto show');

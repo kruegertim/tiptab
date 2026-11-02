@@ -193,3 +193,33 @@ Floating key height = docked key height(mm→px) * floatingWidth / monitorWidth,
 Add rows for mode (ComboRow Angedockt/Schwebend) and floating opacity (SpinRow or Adw.ActionRow+Gtk.Scale
 30–100 %, sensitive only in floating mode). Floating x/y/width are not shown (maybe a "Position
 zurücksetzen" button that resets floating-x/-y/-width).
+
+## Amendment 2 — prediction engine (iOS-like suggestions, autocorrect, dynamic hit areas)
+
+New directory `tablet-osk@kruegertim/predict/` (pure JS ES modules, **no gi imports** except in `store.js`),
+data in `tablet-osk@kruegertim/predict/data/`, build tools in `~/osk/tools/` (not shipped).
+
+```js
+// predict/engine.js  (pure, node-testable)
+export class PredictionEngine {
+  constructor({lexicon, bigrams, userDict})   // lexicon/bigrams: parsed data objects (see loader); userDict: UserDict
+  setLanguage(lang)                           // 'de' | 'en' (engine may hold both lexicons lazily via loader)
+  suggest(prefix, prevWord = null, max = 3)   // -> [{word, score, kind:'literal'|'completion'|'correction'|'next'}]
+                                              //    iOS slot order: [literal-or-alt, BEST, alt]; prefix '' => next-word (bigram)
+  autocorrect(word, prevWord = null)          // -> {replacement, confidence} | null  (only when confident; keep case pattern,
+                                              //    never change words in lexicon/userDict, never numbers/URLs/mixed alnum)
+  nextKeyProbs(prefix)                        // -> Map(char -> prob) over a-z äöüß (lowercase), smoothed, sums to 1
+  learn(word)  / unlearn(word)                // userDict bookkeeping: word kept twice => learned
+}
+// predict/touch.js (pure)
+export function resolveTouch({x, y}, keys, probs, {sigmaX, sigmaY, enabled})
+  // keys: [{char, cx, cy, w, h}] (centres in px); returns char maximising P(char|prefix)*N(touch|centre);
+  // must never pick a key whose visible rect is farther than ~0.5 key from the touch (cap), and if
+  // the touch is in the inner 60% of a visible key return that key (iOS keeps clear hits).
+// predict/loader.js — lazily loads data/<lang>.json(.gz?) via a passed-in readFile(path) function,
+//    returns {lexicon, bigrams}; caches; parse cost measured.
+// predict/store.js — UserDict persisted (JSON) at ~/.local/share/tablet-osk/userdict.json via Gio, debounced
+//    writes, clear(); never stores anything when told the field is a password/PIN.
+```
+Performance budget: every call above < 5 ms on this laptop (measure with node, report p50/p95);
+data file sizes small (target < 3 MB per language uncompressed, load < 150 ms).

@@ -158,6 +158,8 @@ export default class TabletOskPreferences extends ExtensionPreferences {
 
         behaviourGroup.add(switchRow(settings, 'auto-show', 'Automatisch einblenden',
             'Tastatur erscheint, wenn ein Textfeld den Fokus erhält'));
+        behaviourGroup.add(switchRow(settings, 'hide-after-submit', 'Nach dem Absenden ausblenden',
+            'Automatisch eingeblendete Tastatur verschwindet nach Enter in einzeiligen Feldern (Formular/Nachricht gesendet) oder Esc'));
         behaviourGroup.add(switchRow(settings, 'show-panel-icon', 'Symbol in der oberen Leiste',
             'Antippen blendet die Tastatur ein/aus'));
         behaviourGroup.add(switchRow(settings, 'swipe-gestures', 'Wischgesten',
