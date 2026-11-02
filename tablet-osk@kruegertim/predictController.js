@@ -16,9 +16,8 @@ import {
 
 const SURROUNDING_SETTLE_MS = 300; // ignore surrounding-text updates this soon after our own output
 const SLOW_REFRESH_MS = 12;
+const LOAD_DELAY_MS = 400; // start loading after the slide-in animation of the first show
 const EMPTY_SLOTS = [null, null, null];
-
-const decoder = new TextDecoder('utf-8');
 
 function hasSignal(obj, name) {
     try {
@@ -49,13 +48,15 @@ export class PredictController {
         this._autoSpace = false; // last output was a suggestion tap that appended ' '
         this._state = new UndoLearnState();
         this._slots = EMPTY_SLOTS;
-        this._probsCache = {prefix: null, probs: null};
+        this._probsCache = {key: null, probs: null};
         this._acCache = {key: null, value: null};
         this._allowed = true;
         this._slowWarned = false;
 
         this._refreshId = 0;
         this._resyncId = 0;
+        this._loadDelayId = 0;
+        this._preparsed = new Map(); // data path -> JSON object parsed in an earlier idle slot
         this._sources = new Set();
 
         this._readSettings();
@@ -99,6 +100,7 @@ export class PredictController {
         global.stage.connectObject('notify::key-focus', () => this._onFieldChanged(true), this);
 
         this._charFilter = ch => this._onCharFilter(ch);
+        this._backspaceFilter = () => this._onBackspaceFilter();
         this._resolver = (pt, candidates) => this._resolveKey(pt, candidates);
         this._applyKeyboardHooks();
 
@@ -129,6 +131,7 @@ export class PredictController {
         this._loadGen++;
         this._removeSource('_refreshId');
         this._removeSource('_resyncId');
+        this._removeSource('_loadDelayId');
         for (const id of this._sources)
             GLib.source_remove(id);
         this._sources.clear();
@@ -138,9 +141,14 @@ export class PredictController {
         global.stage.disconnectObject(this);
         const kb = this._keyboard;
         if (kb) {
-            kb.setCharFilter?.(null);
-            kb.setKeyResolver?.(null);
-            kb.setSuggestions?.(EMPTY_SLOTS);
+            try {
+                kb.setCharFilter?.(null);
+                kb.setBackspaceFilter?.(null);
+                kb.setKeyResolver?.(null);
+                kb.setSuggestions?.(EMPTY_SLOTS);
+            } catch (e) {
+                // keyboard already disposed
+            }
         }
         try {
             this._userDict?.flush?.();
@@ -165,6 +173,7 @@ export class PredictController {
         const ready = this._loadState === 'ready' && this._allowed;
         kb.setCharFilter?.(ready && (this._autocorrect || this._suggestions) ? this._charFilter : null);
         kb.setKeyResolver?.(ready && this._dynamicHit && this._touch ? this._resolver : null);
+        kb.setBackspaceFilter?.(ready && this._autocorrect ? this._backspaceFilter : null);
         kb.setSuggestionsEnabled?.(this._suggestions && this._allowed);
         if (!ready || !this._suggestions)
             this._setSlots(EMPTY_SLOTS);
@@ -197,6 +206,11 @@ export class PredictController {
     }
 
     _onLanguageChanged() {
+        try {
+            this._engine?.setLayout?.(this._settings.get_string('layout'));
+        } catch (e) {
+            // ignore
+        }
         const lang = this._wantedLanguage();
         if (lang === this._lang)
             return;
@@ -265,7 +279,13 @@ export class PredictController {
     _onMappedChanged() {
         if (this._keyboard?.mapped) {
             this._onFieldChanged(true);
-            this.ensureLoaded();
+            if (this._loadState === 'idle' && !this._loadDelayId) {
+                this._loadDelayId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, LOAD_DELAY_MS, () => {
+                    this._loadDelayId = 0;
+                    this.ensureLoaded();
+                    return GLib.SOURCE_REMOVE;
+                });
+            }
         } else {
             this.reset();
         }
@@ -300,12 +320,10 @@ export class PredictController {
             this._buffer = dropLast(this._buffer);
             this._markOwnEdit();
             this._autoSpace = false;
-            const actions = this._state.backspace();
-            for (const a of actions) {
+            for (const a of this._state.backspace()) {
                 if (a.type === 'revert')
                     this._revert(a);
             }
-            this._learnActions(actions.filter(a => a.type === 'learn'));
             break;
         }
         case 'Shift_L': case 'Shift_R': case 'Caps_Lock': case 'ISO_Level3_Shift':
@@ -417,13 +435,59 @@ export class PredictController {
         }
     }
 
+    /**
+     * Called by the keyboard before it sends a BackSpace. If an autocorrect undo is armed and the
+     * app has IM focus, do the whole undo as ONE input-method edit (delete replacement+separator,
+     * commit original) and consume the BackSpace: a key event would reach the app after the IM
+     * edit and garble the word.
+     */
+    _onBackspaceFilter() {
+        const c = this._state.correction;
+        if (!c || !c.armed || !this._allowed || !Main.inputMethod.currentFocus)
+            return false;
+        if (!this._buffer.endsWith(c.replacement + c.separator))
+            return false;
+        const actions = this._state.backspace();
+        const a = actions.find(x => x.type === 'revert');
+        if (!a)
+            return false;
+        this._autoSpace = false;
+        this._edit(cpLength(c.replacement) + cpLength(c.separator), c.original);
+        if (this._engine && this._allowed) {
+            try {
+                if (typeof this._engine.undoAutocorrect === 'function')
+                    this._engine.undoAutocorrect(a.original, a.replacement);
+                else
+                    this._engine.learn(a.original);
+            } catch (e) {
+                console.error(`[tablet-osk] undoAutocorrect failed: ${e.message}`);
+            }
+        }
+        this._acCache = {key: null, value: null};
+        this._probsCache = {key: null, probs: null};
+        this._queueRefresh();
+        return true;
+    }
+
     _revert(a) {
         // the BackSpace already removed the separator; swap the replacement back to the original
         const {word} = this._context();
         if (word !== a.replacement)
             return; // text is not what we expect (e.g. app ignored the edit) – do nothing
         this._edit(a.deleteCount, a.text);
+        // counts the original as kept once and blocks this correction persistently
+        if (this._engine && this._allowed) {
+            try {
+                if (typeof this._engine.undoAutocorrect === 'function')
+                    this._engine.undoAutocorrect(a.original, a.replacement);
+                else
+                    this._engine.learn(a.original);
+            } catch (e) {
+                console.error(`[tablet-osk] undoAutocorrect failed: ${e.message}`);
+            }
+        }
         this._acCache = {key: null, value: null};
+        this._probsCache = {key: null, probs: null};
     }
 
     _onSuggestionActivated(index) {
@@ -492,6 +556,7 @@ export class PredictController {
                 word,
                 suggestions,
                 correction: replacement ? {replacement} : null,
+                ordered: true, // predict/engine.js returns positional iOS slots
             });
         } catch (e) {
             console.error(`[tablet-osk] suggest failed: ${e.message}`);
@@ -507,28 +572,24 @@ export class PredictController {
     _resolveKey(pt, candidates) {
         if (!this._engine || !this._touch || !this._allowed || !candidates?.length)
             return null;
-        const {word} = this._context();
-        const prefix = word.toLowerCase();
-        if (this._probsCache.prefix !== prefix) {
+        const {word, prevWord} = this._context();
+        const key = `${word ? '' : prevWord ?? ''}\u0001${word}`;
+        if (this._probsCache.key !== key) {
             let probs = null;
             try {
-                probs = this._engine.nextKeyProbs(prefix);
+                // prevWord only matters for the first letter of a word
+                probs = this._engine.nextKeyProbs(word, word ? null : prevWord);
             } catch (e) {
                 probs = null;
             }
-            this._probsCache = {prefix, probs};
+            this._probsCache = {key, probs};
         }
         const probs = this._probsCache.probs;
         if (!probs)
             return null;
-        // key pitch from the candidates (all letter keys have the same size)
-        const c0 = candidates[0];
         try {
-            const r = this._touch.resolveTouch(pt, candidates, probs, {
-                sigmaX: c0.w * 0.5,
-                sigmaY: c0.h * 0.5,
-                enabled: true,
-            });
+            // sigma defaults in touch.js: 0.45 × visible key size
+            const r = this._touch.resolveTouch(pt, candidates, probs, {enabled: true});
             return typeof r === 'string' ? r : (r?.char ?? null);
         } catch (e) {
             return null;
@@ -548,13 +609,13 @@ export class PredictController {
             }
         }
         this._acCache = {key: null, value: null};
-        this._probsCache = {prefix: null, probs: null};
+        this._probsCache = {key: null, probs: null};
     }
 
     _clearUserDict() {
         this._state.reset();
         this._acCache = {key: null, value: null};
-        this._probsCache = {prefix: null, probs: null};
+        this._probsCache = {key: null, probs: null};
         const doClear = ud => {
             try {
                 ud?.clear?.();
@@ -573,8 +634,10 @@ export class PredictController {
                 return;
             const ud = this._userDict ?? this._createUserDict(mods);
             doClear(ud);
-            if (ud !== this._userDict)
+            if (ud !== this._userDict) {
                 ud?.flush?.();
+                ud?.destroy?.();
+            }
         }).catch(e => console.error(`[tablet-osk] clearing userdict failed: ${e.message}`));
     }
 
@@ -606,19 +669,11 @@ export class PredictController {
     }
 
     _readFile(path) {
-        let full = path;
-        if (!GLib.path_is_absolute(path)) {
-            const candidates = [
-                `${this._extensionPath}/predict/${path}`,
-                `${this._extensionPath}/predict/data/${path}`,
-                `${this._extensionPath}/${path}`,
-            ];
-            full = candidates.find(p => GLib.file_test(p, GLib.FileTest.EXISTS)) ?? candidates[0];
-        }
+        const full = GLib.path_is_absolute(path) ? path : `${this._extensionPath}/predict/data/${path}`;
         const [ok, bytes] = GLib.file_get_contents(full);
         if (!ok)
             throw new Error(`cannot read ${full}`);
-        return decoder.decode(bytes);
+        return bytes; // Uint8Array; loader.js decodes it
     }
 
     _createUserDict(mods) {
@@ -647,7 +702,7 @@ export class PredictController {
             }
             this._setPrivate(!this._allowed);
             this._acCache = {key: null, value: null};
-            this._probsCache = {prefix: null, probs: null};
+            this._probsCache = {key: null, probs: null};
             this._applyKeyboardHooks();
             if (this._wantedLanguage() !== lang)
                 this._onLanguageChanged();
@@ -678,7 +733,18 @@ export class PredictController {
             this._userDict._toskLoaded = true;
         }
 
-        // reading + parsing the data file is the big chunk; give it its own idle slot
+        // reading + JSON.parse (~60 ms for de) and building the indexes (~30 ms) are the big
+        // chunks; each gets its own idle slot so no single main-loop iteration blocks for long
+        const dl = this._ensureLoader(mods.loader);
+        if (dl && !dl.has?.(lang)) {
+            await this._idle(() => {
+                const path = dl.path(lang);
+                const obj = JSON.parse(new TextDecoder('utf-8').decode(this._readFile(path)));
+                this._preparsed.set(path, obj);
+            });
+            if (stale())
+                throw new Error('cancelled');
+        }
         const data = await this._idle(() => this._loadData(mods.loader, lang));
         const resolved = data && typeof data.then === 'function' ? await data : data;
         if (stale())
@@ -690,22 +756,42 @@ export class PredictController {
                 lexicon: resolved.lexicon,
                 bigrams: resolved.bigrams,
                 userDict: this._userDict,
+                loader: this._loader ?? null,
+                lang,
+                layout: this._settings.get_string('layout'),
             });
-            engine.setLanguage?.(lang);
             return engine;
         });
+        // Build the lazy indexes now, in their own idle slot, so the first keystroke doesn't pay for it.
+        await this._idle(() => this._engine?.warmUp?.());
+        if (stale())
+            throw new Error('cancelled');
+    }
+
+    _ensureLoader(loader) {
+        if (!this._loader && typeof loader.DataLoader === 'function') {
+            this._loader = new loader.DataLoader({
+                // pre-parsed object if available (loader.parseLanguageData accepts objects)
+                readFile: p => {
+                    const obj = this._preparsed.get(p);
+                    if (obj) {
+                        this._preparsed.delete(p);
+                        return obj;
+                    }
+                    return this._readFile(p);
+                },
+                dataDir: `${this._extensionPath}/predict/data`,
+            });
+        }
+        return this._loader ?? null;
     }
 
     _loadData(loader, lang) {
-        const readFile = p => this._readFile(p);
+        const dl = this._ensureLoader(loader);
+        if (dl)
+            return dl.load(lang);
         if (typeof loader.loadLanguage === 'function')
-            return loader.loadLanguage(lang, readFile);
-        if (typeof loader.load === 'function')
-            return loader.load(lang, readFile);
-        if (typeof loader.Loader === 'function') {
-            this._loader ??= new loader.Loader({readFile});
-            return this._loader.load(lang);
-        }
+            return loader.loadLanguage(lang, p => this._readFile(p));
         throw new Error('predict/loader.js: no known load function');
     }
 

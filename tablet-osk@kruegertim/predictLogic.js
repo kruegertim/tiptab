@@ -109,6 +109,38 @@ export function applyCase(word, typed) {
     return word;
 }
 
+function buildOrderedSlots({word, suggestions, correction}) {
+    const raw = (suggestions ?? []).slice(0, 3);
+    while (raw.length < 3)
+        raw.push(null);
+    const slots = raw.map(s => (s && typeof s.word === 'string' && s.word
+        ? {text: s.word, kind: s.kind || (word ? 'completion' : 'next')} : null));
+    const repl = word && correction?.replacement && correction.replacement !== word
+        ? correction.replacement : null;
+    if (repl) {
+        // what space will do must be what the bar shows: [ "typed" , correction , alternative ]
+        const lower = new Set([word.toLowerCase(), repl.toLowerCase()]);
+        const alt = slots.find(s => s && s.kind !== 'literal' && !lower.has(s.text.toLowerCase())) ?? null;
+        return [{text: word, kind: 'literal'}, {text: repl, kind: 'correction'}, alt];
+    }
+    // no autocorrect on space (disabled / blocked / not confident): nothing is labelled a correction
+    for (const s of slots) {
+        if (s && s.kind === 'correction')
+            s.kind = 'completion';
+    }
+    // drop duplicates (case-insensitive), keep positions
+    const seen = new Set();
+    return slots.map(s => {
+        if (!s)
+            return null;
+        const k = s.text.toLowerCase();
+        if (seen.has(k))
+            return null;
+        seen.add(k);
+        return s;
+    });
+}
+
 function rankOrder(list) {
     // [best, 2nd, 3rd] -> iOS order [2nd, best, 3rd]
     return [list[1] ?? null, list[0] ?? null, list[2] ?? null];
@@ -120,9 +152,13 @@ function rankOrder(list) {
  * @param {string} p.word        current partial word ('' => next-word predictions)
  * @param {Array<{word:string, score?:number, kind?:string}>} p.suggestions  engine.suggest() result
  * @param {{replacement:string}|null} p.correction  engine.autocorrect(word) result (applied on space)
+ * @param {boolean} [p.ordered]  suggestions are already positional iOS slots (predict/engine.js
+ *        returns [alt|literal, BEST, alt] with nulls); otherwise they are ranked by score here
  * @returns {Array<{text:string, kind:string}|null>} exactly 3 entries
  */
-export function buildSlots({word, suggestions, correction}) {
+export function buildSlots({word, suggestions, correction, ordered = false}) {
+    if (ordered)
+        return buildOrderedSlots({word, suggestions, correction});
     const seen = new Set();
     const items = [];
     const push = (text, kind) => {
@@ -249,17 +285,15 @@ export class UndoLearnState {
         if (c && c.armed) {
             this.pendingKeep = null;
             this.blocked.add(c.original.toLowerCase());
-            return [
-                {
-                    type: 'revert',
-                    // the BackSpace already removed the separator
-                    deleteCount: cpLength(c.replacement),
-                    text: c.original,
-                    original: c.original,
-                    replacement: c.replacement,
-                },
-                ...(isLearnable(c.original) ? [{type: 'learn', word: c.original}] : []),
-            ];
+            // the controller also registers the original as kept once (engine.undoAutocorrect)
+            return [{
+                type: 'revert',
+                // the BackSpace already removed the separator
+                deleteCount: cpLength(c.replacement),
+                text: c.original,
+                original: c.original,
+                replacement: c.replacement,
+            }];
         }
         // deleting right after the separator: the word was not kept
         this.pendingKeep = null;

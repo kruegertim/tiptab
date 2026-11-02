@@ -428,6 +428,8 @@ export const SettingsPanel = GObject.registerClass({
 
     _onClearClicked() {
         const b = this._clearButton;
+        if (this._clearDone)
+            return; // 'Gelöscht' feedback phase
         if (!this._clearConfirmId) {
             // first tap: ask for confirmation for 3 s
             b.label = 'Wirklich löschen?';
@@ -445,6 +447,8 @@ export const SettingsPanel = GObject.registerClass({
         const s = this._settings;
         s.set_int('clear-userdict-request', (s.get_int('clear-userdict-request') + 1) % 1000000);
         b.label = 'Gelöscht';
+        b.remove_style_class_name('tosk-settings-done');
+        b.add_style_class_name('tosk-settings-step');
         this._clearConfirmId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, () => {
             this._clearConfirmId = 0;
             this._resetClearButton();

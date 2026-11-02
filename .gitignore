@@ -1,1 +1,7 @@
 tablet-osk@kruegertim/schemas/gschemas.compiled
+node_modules/
+__pycache__/
+*.pyc
+*.png
+!tablet-osk@kruegertim/icons/*.png
+tools/downloads/

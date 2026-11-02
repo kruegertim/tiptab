@@ -1,4 +1,5 @@
 import Adw from 'gi://Adw';
+import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk';
 
@@ -166,6 +167,115 @@ export default class TabletOskPreferences extends ExtensionPreferences {
             'Antippen blendet die Tastatur ein/aus'));
         behaviourGroup.add(switchRow(settings, 'swipe-gestures', 'Wischgesten',
             'Vom unteren Rand nach oben wischen zum Einblenden, auf dem Griff nach unten zum Ausblenden'));
+
+        // --- Modifier keys ---
+        const modGroup = new Adw.PreferencesGroup({title: 'Sondertasten'});
+        page.add(modGroup);
+
+        modGroup.add(comboRow(window, settings, 'super-symbol', 'Symbol der Super-Taste', [
+            ['fish', 'Fisch'],
+            ['diamond', 'Raute'],
+            ['text', 'Super'],
+        ]));
+
+        const holdSwitchRow = switchRow(settings, 'modifier-hold-release',
+            'Gehaltene Umschalttasten beim Loslassen lösen',
+            'Gehaltene Umschalt-/Strg-/Alt-/AltGr-/Fn-/Super-Taste wirkt während des Haltens und wird ' +
+            'nach der Haltedauer beim Loslassen gelöst');
+        modGroup.add(holdSwitchRow);
+
+        const holdRow = new Adw.SpinRow({
+            title: 'Haltedauer (s)',
+            subtitle: 'So lange gehalten gilt eine Umschalttaste als gehalten statt angetippt',
+            digits: 1,
+            adjustment: new Gtk.Adjustment({
+                lower: 0.3,
+                upper: 2.0,
+                step_increment: 0.1,
+                page_increment: 0.5,
+            }),
+        });
+        // key is in ms, UI shows seconds (manual two-way sync, see opacity)
+        const syncHold = () => {
+            const sec = settings.get_int('modifier-hold-ms') / 1000;
+            if (Math.abs(holdRow.value - sec) > 0.001)
+                holdRow.value = sec;
+            holdRow.sensitive = settings.get_boolean('modifier-hold-release');
+        };
+        syncHold();
+        holdRow.connect('notify::value', () => {
+            const ms = Math.round(holdRow.value * 10) * 100;
+            if (settings.get_int('modifier-hold-ms') !== ms)
+                settings.set_int('modifier-hold-ms', ms);
+        });
+        const holdIds = [
+            settings.connect('changed::modifier-hold-ms', syncHold),
+            settings.connect('changed::modifier-hold-release', syncHold),
+        ];
+        window.connect('close-request', () => {
+            holdIds.forEach(id => settings.disconnect(id));
+            return false;
+        });
+        modGroup.add(holdRow);
+
+        // --- Prediction ---
+        const predictGroup = new Adw.PreferencesGroup({
+            title: 'Vorhersage',
+            description: 'In Passwort-, PIN-, Zahlen- und Terminalfeldern ist die Vorhersage immer aus ' +
+                'und es wird nichts gelernt.',
+        });
+        page.add(predictGroup);
+
+        predictGroup.add(switchRow(settings, 'suggestions', 'Vorschläge',
+            'Drei Wortvorschläge über den Tasten; nach einem Leerzeichen das wahrscheinlich nächste Wort'));
+        predictGroup.add(switchRow(settings, 'autocorrect', 'Autokorrektur',
+            'Tippfehler werden bei Leerzeichen oder Satzzeichen korrigiert; Rücktaste direkt danach ' +
+            'stellt das getippte Wort wieder her'));
+        predictGroup.add(switchRow(settings, 'dynamic-hitareas', 'Dynamische Trefferflächen',
+            'Wahrscheinliche nächste Buchstaben sind unsichtbar etwas leichter zu treffen'));
+        predictGroup.add(comboRow(window, settings, 'prediction-language', 'Sprache', [
+            ['auto', 'Automatisch (nach Layout)'],
+            ['de', 'Deutsch'],
+            ['en', 'Englisch'],
+        ]));
+
+        const clearRow = new Adw.ActionRow({
+            title: 'Gelerntes Wörterbuch löschen',
+            subtitle: 'Entfernt alle Wörter, die die Tastatur von dir gelernt hat',
+        });
+        const clearButton = new Gtk.Button({
+            label: 'Löschen',
+            valign: Gtk.Align.CENTER,
+            css_classes: ['destructive-action'],
+        });
+        let clearTimeout = 0;
+        const resetClear = () => {
+            if (clearTimeout)
+                GLib.source_remove(clearTimeout);
+            clearTimeout = 0;
+            clearButton.label = 'Löschen';
+        };
+        clearButton.connect('clicked', () => {
+            if (!clearTimeout) {
+                clearButton.label = 'Wirklich löschen?';
+                clearTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 3000, () => {
+                    clearTimeout = 0;
+                    clearButton.label = 'Löschen';
+                    return GLib.SOURCE_REMOVE;
+                });
+                return;
+            }
+            resetClear();
+            settings.set_int('clear-userdict-request',
+                (settings.get_int('clear-userdict-request') + 1) % 1000000);
+            window.add_toast?.(new Adw.Toast({title: 'Gelerntes Wörterbuch gelöscht'}));
+        });
+        window.connect('close-request', () => {
+            resetClear();
+            return false;
+        });
+        clearRow.add_suffix(clearButton);
+        predictGroup.add(clearRow);
 
         // --- Test ---
         const testGroup = new Adw.PreferencesGroup({

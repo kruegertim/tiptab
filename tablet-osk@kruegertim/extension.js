@@ -14,6 +14,7 @@ import {VisibilityController} from './visibility.js';
 import {SettingsPanel} from './settingsPanel.js';
 import {FloatingController} from './floating.js';
 import {DockMover} from './dock.js';
+import {PredictController} from './predictController.js';
 
 const ANIMATION_TIME = 200;
 const MIN_FLOATING_KEY_MM = 6;
@@ -40,6 +41,11 @@ export default class TabletOskExtension extends Extension {
         this._keyboard.x_expand = true;
         this._keyboard.y_expand = true;
         this._container.add_child(this._keyboard);
+        this._predict = new PredictController({
+            settings: this._settings,
+            keyboard: this._keyboard,
+            extensionPath: this.path,
+        });
 
         this._metrics = new MonitorMetrics(() => this._relayout(), this._settings);
 
@@ -53,6 +59,21 @@ export default class TabletOskExtension extends Extension {
             'settings-request', () => this._setPanelVisible(!this._panel?.visible),
             'layout-changed', () => this._afterRebuild(),
             'key-sent', (_k, name) => this._visibility?.onKeySent(name),
+            'swipe-progress', (_k, dy) => {
+                if (this._visible && this._container)
+                    this._container.translation_y = Math.max(0, dy);
+            },
+            'swipe-cancel', () => {
+                this._container?.ease({
+                    translation_y: 0,
+                    duration: 120,
+                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                });
+            },
+            'swipe-hide', () => {
+                this._hide();
+                this._visibility?.notifyVisibleChanged();
+            },
             this);
 
         this._floating = new FloatingController({
@@ -100,6 +121,8 @@ export default class TabletOskExtension extends Extension {
             this._relayoutId = 0;
         }
 
+        this._predict?.destroy();
+        this._predict = null;
         this._visibility?.destroy();
         this._indicator?.destroy();
         this._physical?.destroy();
@@ -192,6 +215,9 @@ export default class TabletOskExtension extends Extension {
         }
         // WorkArea watches 'mode' itself and drops the strut while floating.
         this._relayout();
+        // The handle getter is null when docked, the grab bar when floating.
+        this._visibility?.rebindHandle();
+        this._floating.rebind();
     }
 
     _applyFloatingHeight(width) {

@@ -4,9 +4,16 @@
 
 .tosk-keyboard {
     background-color: #262628;
-    font-family: "Liberation Sans", "Nimbus Sans", "Noto Sans", sans-serif;
-    font-weight: 500;
+    /* unquoted: St's CSS parser rejects a list of several quoted family names */
+    font-family: Liberation Sans, Nimbus Sans, Noto Sans, sans-serif;
+    font-weight: bold;
     color: #f5f5f5;
+}
+
+/* All keyboard text is bold. !important + higher specificity because some shell
+ * themes (Ubuntu Yaru) force "* { font-weight: normal !important; }". */
+.tosk-keyboard StLabel {
+    font-weight: bold !important;
 }
 
 .tosk-keyboard.tosk-floating {
@@ -14,7 +21,7 @@
     border: 1px solid rgba(255, 255, 255, 0.16);
 }
 
-/* ---- handle bar ---- */
+/* ---- grab bar (floating mode only) ---- */
 .tosk-handle {
     background-color: transparent;
 }
@@ -24,13 +31,39 @@
     border-radius: 3px;
 }
 
-.tosk-handle-button {
+/* ---- suggestion bar: flat touch areas on the keyboard background ---- */
+.tosk-suggest-bar {
+    background-color: transparent;
+}
+
+.tosk-suggest-gear {
     color: #b8b8bc;
     border-radius: 6px;
 }
 
-.tosk-handle-button:active {
-    background-color: #3c3c40;
+.tosk-suggest-gear:active {
+    background-color: #3a3a3c;
+    color: #ffffff;
+}
+
+.tosk-suggest-divider {
+    background-color: rgba(255, 255, 255, 0.22);
+}
+
+.tosk-suggest-slot {
+    border-radius: 6px;
+}
+
+.tosk-suggest-slot:active {
+    background-color: #3a3a3c;
+}
+
+.tosk-suggest-label {
+    font-weight: bold;
+    color: #c4c4c8;
+}
+
+.tosk-suggest-main .tosk-suggest-label {
     color: #ffffff;
 }
 
@@ -81,12 +114,15 @@
     color: #e8e8e8;
 }
 
-.tosk-label-shift {
-    color: #d8d8da;
+/* keycap glyphs (shift / base / AltGr), all the same size and colour;
+ * inactive levels are dimmed via opacity from keyboard.js */
+.tosk-glyph {
+    color: #f5f5f5;
+    font-weight: bold;
 }
 
-.tosk-label-altgr {
-    color: #9a9a9e;
+.tosk-icon-fish {
+    color: #f5f5f5;
 }
 
 /* Fn key text and every Fn-layer secondary label/icon: ThinkPad blue */
