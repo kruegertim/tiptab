@@ -62,6 +62,92 @@ const S = Clutter.ActorAlign.START, E = Clutter.ActorAlign.END, C = Clutter.Acto
 
 // ---------------------------------------------------------------- Key
 
+// Keycap grid for keys with several glyphs: shift top-left, base bottom-left, AltGr
+// bottom-right. Glyphs are placed by their text baseline, not by their label box, so
+// characters drawn from fallback fonts (´ § µ „ …) or with accents/descenders sit on
+// exactly the same lines as all others. The baselines come from the primary font's
+// ascent/descent, so they are identical on every key of a given height.
+const GlyphGridLayout = GObject.registerClass(
+class TabletOskGlyphGridLayout extends Clutter.LayoutManager {
+    _init(slots) {
+        super._init();
+        this._slots = slots; // {topLeft, bottomLeft, bottomRight} St.Label|null
+        this._fontPx = 0;
+        this._desc = null;
+        this._metrics = null;
+        this._probe = null;
+    }
+
+    // Called by OskKey.setHeight() with the .tosk-glyph font size. The font
+    // description is built here instead of read from the labels: reading
+    // ClutterText.font_description from JS corrupts it on GNOME 50 (gjs frees the
+    // borrowed boxed), which later crashes the shell in pango.
+    setFontPx(px) {
+        if (px === this._fontPx)
+            return;
+        this._fontPx = px;
+        const family = St.Settings.get().font_name ?? 'Sans';
+        const desc = Pango.FontDescription.from_string(family);
+        desc.set_absolute_size(px * Pango.SCALE);
+        desc.set_weight(Pango.Weight.BOLD); // .tosk-glyph is bold
+        this._desc = desc;
+        this._metrics = null;
+        this.layout_changed();
+    }
+
+    vfunc_get_preferred_width(_container, _forHeight) {
+        return [0, 0];
+    }
+
+    vfunc_get_preferred_height(_container, _forWidth) {
+        return [0, 0];
+    }
+
+    _ensureMetrics(label) {
+        if (this._metrics)
+            return;
+        const ctx = label.get_pango_context();
+        const fm = ctx.get_metrics(this._desc, null);
+        this._metrics = {
+            ascent: fm.get_ascent() / Pango.SCALE,
+            descent: fm.get_descent() / Pango.SCALE,
+        };
+        this._probe = Pango.Layout.new(ctx);
+        this._probe.set_font_description(this._desc);
+    }
+
+    _place(label, align, baseline, width) {
+        const [, natW] = label.get_preferred_width(-1);
+        const [, natH] = label.get_preferred_height(natW);
+        // Baseline of this text's line (includes fallback fonts used for it).
+        this._probe.set_text(label.text, -1);
+        const labelBaseline = this._probe.get_baseline() / Pango.SCALE;
+        const box = new Clutter.ActorBox();
+        box.set_origin(align === 'right' ? Math.round(width - natW) : 0,
+            Math.round(baseline - labelBaseline));
+        box.set_size(natW, natH);
+        label.allocate(box);
+    }
+
+    vfunc_allocate(_container, box) {
+        const {topLeft, bottomLeft, bottomRight} = this._slots;
+        const ref = topLeft ?? bottomLeft ?? bottomRight;
+        if (!ref || !this._desc)
+            return;
+        this._ensureMetrics(ref);
+        const w = box.get_width();
+        const h = box.get_height();
+        const topBaseline = Math.round(this._metrics.ascent);
+        const bottomBaseline = Math.round(h - this._metrics.descent);
+        if (topLeft)
+            this._place(topLeft, 'left', topBaseline, w);
+        if (bottomLeft)
+            this._place(bottomLeft, 'left', bottomBaseline, w);
+        if (bottomRight)
+            this._place(bottomRight, 'right', bottomBaseline, w);
+    }
+});
+
 const OskKey = GObject.registerClass(
 class OskKey extends St.Widget {
     _init(def, keyboard) {
@@ -117,6 +203,7 @@ class OskKey extends St.Widget {
         this._mainIcon = null;
         this._glyphs = null;      // {base, shift, altgr} for char keys (level dimming)
         this._multi = false;      // char key with several same-size glyphs
+        this._gridLayout = null;  // GlyphGridLayout of a multi-glyph key
 
         if (def.type === 'char' && !def.space && def.label) {
             const base = def.label;
@@ -131,15 +218,27 @@ class OskKey extends St.Widget {
                 // bottom-right. Letters with an AltGr glyph (Q @, E €, M µ): letter
                 // top-left, AltGr bottom-right (like the printed ThinkPad keycaps).
                 this._multi = true;
-                const g = {base: null, shift: null, altgr: null};
-                if (shift) {
-                    g.shift = this._corner(S, S, 'tosk-glyph', shift);
-                    g.base = this._corner(S, E, 'tosk-glyph', base);
-                } else {
-                    g.base = this._corner(S, S, 'tosk-glyph', base);
-                }
+                const glyph = (cls, text) => new St.Label({text, style_class: cls});
+                const g = {base: glyph('tosk-glyph', base), shift: null, altgr: null};
+                if (shift)
+                    g.shift = glyph('tosk-glyph', shift);
                 if (altgr)
-                    g.altgr = this._corner(E, E, 'tosk-glyph tosk-glyph-altgr', altgr);
+                    g.altgr = glyph('tosk-glyph tosk-glyph-altgr', altgr);
+                this._gridLayout = new GlyphGridLayout({
+                    topLeft: shift ? g.shift : g.base,
+                    bottomLeft: shift ? g.base : null,
+                    bottomRight: g.altgr,
+                });
+                const grid = new St.Widget({
+                    x_expand: true,
+                    y_expand: true,
+                    layout_manager: this._gridLayout,
+                });
+                for (const l of [g.shift, g.base, g.altgr]) {
+                    if (l)
+                        grid.add_child(l);
+                }
+                this.add_child(grid);
                 this._glyphs = g;
             }
         } else if (def.type === 'modifier' && def.modifier === 'super') {
@@ -212,6 +311,7 @@ class OskKey extends St.Widget {
                 if (g)
                     g.style = `font-size: ${glyph}px;`;
             }
+            this._gridLayout.setFontPx(glyph);
         } else if (this._main) {
             let size = big;
             if (this._mainKind === 'small')
