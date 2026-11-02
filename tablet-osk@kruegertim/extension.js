@@ -13,6 +13,7 @@ import {PanelIndicator} from './indicator.js';
 import {VisibilityController} from './visibility.js';
 import {SettingsPanel} from './settingsPanel.js';
 import {FloatingController} from './floating.js';
+import {DockMover} from './dock.js';
 
 const ANIMATION_TIME = 200;
 const MIN_FLOATING_KEY_MM = 6;
@@ -21,6 +22,7 @@ export default class TabletOskExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
         this._visible = false;
+        this._dockMover = new DockMover(this._settings);
 
         this._suppressBuiltinOsk();
 
@@ -111,6 +113,8 @@ export default class TabletOskExtension extends Extension {
         this._visibility = this._indicator = this._physical = this._metrics = null;
         this._floating = this._panel = this._workArea = this._keyboard = this._container = null;
 
+        this._dockMover?.destroy();
+        this._dockMover = null;
         this._restoreBuiltinOsk();
         this._settings = null;
     }
@@ -178,10 +182,13 @@ export default class TabletOskExtension extends Extension {
         const floating = this._isFloating;
         this._keyboard.setFloating(floating);
         if (floating) {
+            this._dockMover.restore();
             this._container.translation_y = 0;
             this._floating.enable();
         } else {
             this._floating.disable();
+            if (this._visible)
+                this._dockMover.moveAway();
         }
         // WorkArea watches 'mode' itself and drops the strut while floating.
         this._relayout();
@@ -259,6 +266,13 @@ export default class TabletOskExtension extends Extension {
 
     // ---- show / hide --------------------------------------------------------------------
 
+    // Keep the keyboard above all other chrome (dock, panels added later by extensions).
+    _raise() {
+        const parent = this._container?.get_parent();
+        if (parent)
+            parent.set_child_above_sibling(this._container, null);
+    }
+
     _show() {
         if (!this._container || this._visible)
             return;
@@ -272,6 +286,7 @@ export default class TabletOskExtension extends Extension {
             c.translation_y = 0;
             c.opacity = 0;
             c.show();
+            this._raise();
             c.ease({
                 opacity: Math.round(255 * this._settings.get_double('floating-opacity')),
                 duration: ANIMATION_TIME,
@@ -281,7 +296,9 @@ export default class TabletOskExtension extends Extension {
         }
 
         c.translation_y = c.height;
+        this._dockMover.moveAway();
         c.show();
+        this._raise();
         this._workArea.setShown(true);
         c.ease({
             translation_y: 0,
@@ -305,6 +322,7 @@ export default class TabletOskExtension extends Extension {
                 return;
             c.hide();
             this._workArea.setShown(false);
+            this._dockMover?.restore();
             if (this._isFloating)
                 c.opacity = Math.round(255 * this._settings.get_double('floating-opacity'));
         };

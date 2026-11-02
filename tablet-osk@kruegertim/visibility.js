@@ -228,7 +228,6 @@ class DragRecognizer {
     }
 
     destroy() {
-        this._clearSubmit();
         this.detach();
         this._onTrigger = null;
         this._shouldStart = null;
@@ -649,6 +648,7 @@ export class VisibilityController {
     }
 
     destroy() {
+        this._clearSubmit();
         this._cancelTimers();
 
         Main.inputMethod.disconnectObject(this);

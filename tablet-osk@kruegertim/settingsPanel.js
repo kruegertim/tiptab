@@ -134,6 +134,7 @@ export const SettingsPanel = GObject.registerClass({
             'changed::shrink-workarea', () => this._syncSwitch(this._shrinkSwitch, 'shrink-workarea'),
             'changed::auto-show', () => this._syncSwitch(this._autoSwitch, 'auto-show'),
             'changed::hide-after-submit', () => this._syncSwitch(this._submitSwitch, 'hide-after-submit'),
+            'changed::move-dock-left', () => this._syncSwitch(this._dockSwitch, 'move-dock-left'),
             'changed::floating-opacity', () => this._syncOpacity(),
             'changed::super-symbol', () => this._superSeg.setActive(this._settings.get_string('super-symbol')),
             'changed::modifier-hold-release', () => this._syncHoldRelease(),
@@ -281,6 +282,10 @@ export const SettingsPanel = GObject.registerClass({
         this._submitSwitch = this._switch('hide-after-submit');
         r.submit = this._row('Nach dem Absenden ausblenden', this._submitSwitch);
 
+        // Dock nach links
+        this._dockSwitch = this._switch('move-dock-left');
+        r.dock = this._row('Dock nach links verschieben', this._dockSwitch);
+
         // Deckkraft
         {
             const {row, valueLabel, slider} = this._sliderRow('Deckkraft', null);
@@ -359,12 +364,12 @@ export const SettingsPanel = GObject.registerClass({
 
         this._rows = r;
         // single-column order (contract order) and two-column order (left | right)
-        this._order1 = [r.keyHeight, r.mode, r.fRow, r.layout, r.shrink, r.auto, r.submit, r.opacity,
+        this._order1 = [r.keyHeight, r.mode, r.fRow, r.layout, r.shrink, r.auto, r.submit, r.dock, r.opacity,
             r.superSym, r.holdRelease, r.holdMs,
             r.predictHeader, r.suggest, r.autocorrect, r.hitareas, r.language, r.clearDict];
         this._order2 = [
             [r.keyHeight, r.layout, r.fRow, r.auto, r.submit, r.superSym, r.holdRelease, r.holdMs],
-            [r.mode, r.shrink, r.opacity,
+            [r.mode, r.shrink, r.opacity, r.dock,
                 r.predictHeader, r.suggest, r.autocorrect, r.hitareas, r.language, r.clearDict],
         ];
 
@@ -728,6 +733,7 @@ export const SettingsPanel = GObject.registerClass({
         this._syncSwitch(this._shrinkSwitch, 'shrink-workarea');
         this._syncSwitch(this._autoSwitch, 'auto-show');
         this._syncSwitch(this._submitSwitch, 'hide-after-submit');
+        this._syncSwitch(this._dockSwitch, 'move-dock-left');
         this._syncOpacity();
         this._superSeg.setActive(this._settings.get_string('super-symbol'));
         this._syncHoldRelease();
