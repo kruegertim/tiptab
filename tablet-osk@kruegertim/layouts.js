@@ -216,6 +216,119 @@ function qwerty(compact) {
     return [r1, r2, r3, r4, bottomRow()];
 }
 
+// ---------------------------------------------------------------- split (thumb mode)
+
+// Thumb mode: every row = left half (7 u) + gap (7 u) + right half (8.5 u) = 22.5 u,
+// so each half covers about a third of the screen width. No F-row: F1–F12 via Fn on
+// the number row (1 … 0 ß ´ / 1 … 0 - =).
+export const SPLIT_TOTAL_UNITS = 22.5;
+export const SPLIT_LEFT_UNITS = 7;
+export const SPLIT_GAP_UNITS = 7;
+
+function gap() {
+    return {id: 'split-gap', type: 'gap', w: SPLIT_GAP_UNITS};
+}
+
+function splitBottomRow() {
+    // left: 1 + 1.25 + 1 + 1 + 2.75 = 7   right: 2.5 + 1 + 1 + 3 + 1 = 8.5
+    const space = (id, w) => ({id, w, type: 'char', char: ' ', shiftChar: ' ', label: '', repeat: true,
+        space: true, fnAction: 'settings', fnIcon: 'emblem-system-symbolic'});
+    return [
+        mod('Fn', 'Fn', 'fn', 1, {fnStyle: true, labelPos: 'tl'}),
+        mod('Ctrl', 'Strg', 'ctrl', 1.25, {labelPos: 'tl'}),
+        mod('Super', '◆', 'super', 1),
+        mod('Alt', 'Alt', 'alt', 1, {labelPos: 'tl'}),
+        space('space', 2.75),
+        gap(),
+        space('space_r', 2.5),
+        mod('AltGr', 'AltGr', 'altgr', 1, {labelPos: 'tl'}),
+        {id: 'Hide', w: 1, type: 'hide', icon: 'keyboard-hide-symbolic', special: true},
+        sp('Left', '←', 'Left', 1, {repeat: true, fnKeysym: 'Home', fnLabel: 'Pos1'}),
+        sp('Down', '↓', 'Down', 1, {repeat: true}),
+        sp('Right', '→', 'Right', 1, {repeat: true, fnKeysym: 'End', fnLabel: 'Ende'}),
+        sp('Next', 'Bild↓', 'Next', 1, {repeat: true, labelPos: 'tl'}),
+    ];
+}
+
+function splitShiftTail() {
+    // right end of row 4: Shift 1.5 + ↑ 1 + Bild↑ 1
+    return [
+        mod('Shift_R', '⇧', 'shift', 1.5),
+        sp('Up', '↑', 'Up', 1, {repeat: true}),
+        sp('Prior', 'Bild↑', 'Prior', 1, {repeat: true, labelPos: 'tl'}),
+    ];
+}
+
+function splitQwertz() {
+    const num = [
+        ch('1', '1', '!'), ch('2', '2', '"', '²'), ch('3', '3', '§', '³'), ch('4', '4', '$'),
+        ch('5', '5', '%'), ch('6', '6', '&'), ch('7', '7', '/', '{'), ch('8', '8', '(', '['),
+        ch('9', '9', ')', ']'), ch('0', '0', '=', '}'), ch('ssharp', 'ß', '?', '\\'),
+        ch('dead_acute', '´', '`'),
+    ];
+    num.forEach((k, i) => {
+        k.fnKeysym = `F${i + 1}`;
+        k.fnLabel = `F${i + 1}`;
+    });
+    return [
+        [sp('Escape', 'Esc', 'Escape', 1, {labelPos: 'tl'}), ch('dead_circumflex', '^', '°'),
+            ...num.slice(0, 5), gap(), ...num.slice(5), sp('BackSpace', '⟵', 'BackSpace', 1.5,
+                {repeat: true, fnKeysym: 'Delete', fnLabel: 'Entf'})],
+        [sp('Tab', '⇥', 'Tab', 2), ch('q', 'q', null, '@'), ch('w', 'w'), ch('e', 'e', null, '€'),
+            ch('r', 'r'), ch('t', 't'), gap(),
+            ch('z', 'z'), ch('u', 'u'), ch('i', 'i'), ch('o', 'o'), ch('p', 'p'), ch('udiaeresis', 'ü'),
+            ch('plus', '+', '*', '~'),
+            {id: 'Return', w: 1.5, type: 'enter', keysym: 'Return', label: '↵', enterPart: 'top', special: true}],
+        [mod('Caps', '⇪', 'caps', 2), ch('a', 'a'), ch('s', 's'), ch('d', 'd'), ch('f', 'f'), ch('g', 'g'),
+            gap(),
+            ch('h', 'h'), ch('j', 'j'), ch('k', 'k'), ch('l', 'l'), ch('odiaeresis', 'ö'),
+            ch('adiaeresis', 'ä'), ch('numbersign', '#', '\''),
+            {id: 'Return', w: 1.5, type: 'enter', keysym: 'Return', label: '', enterPart: 'bottom', special: true}],
+        [mod('Shift', '⇧', 'shift', 1), ch('less', '<', '>', '|'), ch('y', 'y'), ch('x', 'x'), ch('c', 'c'),
+            ch('v', 'v'), ch('b', 'b'), gap(),
+            ch('n', 'n'), ch('m', 'm', null, 'µ'), ch('comma', ',', ';'), ch('period', '.', ':'),
+            ch('minus', '-', '_'), ...splitShiftTail()],
+        splitBottomRow(),
+    ];
+}
+
+function splitQwerty() {
+    const num = [
+        ch('1', '1', '!'), ch('2', '2', '@'), ch('3', '3', '#'), ch('4', '4', '$'), ch('5', '5', '%'),
+        ch('6', '6', '^'), ch('7', '7', '&'), ch('8', '8', '*'), ch('9', '9', '('), ch('0', '0', ')'),
+        ch('minus', '-', '_'), ch('equal', '=', '+'),
+    ];
+    num.forEach((k, i) => {
+        k.fnKeysym = `F${i + 1}`;
+        k.fnLabel = `F${i + 1}`;
+    });
+    return [
+        [sp('Escape', 'Esc', 'Escape', 1, {labelPos: 'tl'}), ch('grave', '`', '~'),
+            ...num.slice(0, 5), gap(), ...num.slice(5), sp('BackSpace', '⟵', 'BackSpace', 1.5,
+                {repeat: true, fnKeysym: 'Delete', fnLabel: 'Entf'})],
+        [sp('Tab', '⇥', 'Tab', 2), ...'qwert'.split('').map(c => ch(c, c)), gap(),
+            ...'yuiop'.split('').map(c => ch(c, c)),
+            ch('bracketleft', '[', '{'), ch('bracketright', ']', '}'), ch('backslash', '\\', '|', null, 1.5)],
+        [mod('Caps', '⇪', 'caps', 2), ...'asdfg'.split('').map(c => ch(c, c)), gap(),
+            ...'hjkl'.split('').map(c => ch(c, c)), ch('semicolon', ';', ':'), ch('apostrophe', '\'', '"'),
+            {id: 'Return', w: 2.5, type: 'enter', keysym: 'Return', label: '↵', special: true}],
+        [mod('Shift', '⇧', 'shift', 2), ...'zxcvb'.split('').map(c => ch(c, c)), gap(),
+            ch('n', 'n'), ch('m', 'm'), ch('comma', ',', '<'), ch('period', '.', '>'), ch('slash', '/', '?'),
+            ...splitShiftTail()],
+        splitBottomRow(),
+    ];
+}
+
+/**
+ * Split layout for thumb mode (rows contain one {type: 'gap'} entry).
+ *
+ * @param {{layout: 'qwertz'|'qwerty'}} opts
+ * @returns {Array<Array<object>>}
+ */
+export function getSplitLayout({layout = 'qwertz'} = {}) {
+    return layout === 'qwerty' ? splitQwerty() : splitQwertz();
+}
+
 // ---------------------------------------------------------------- API
 
 /**
