@@ -9,10 +9,13 @@ import St from 'gi://St';
 
 import {getLayout, TOTAL_UNITS, FALLBACK_KEYVALS} from './layouts.js';
 import {KeyInjector} from './injector.js';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 const REPEAT_DELAY_MS = 500;
 const REPEAT_INTERVAL_MS = 50;
 const SHIFT_DOUBLE_TAP_MS = 400;
+const SUPER_LONG_PRESS_MS = 450;
+const SUPER_DOUBLE_TAP_MS = 400;
 const FLOAT_BORDER_PX = 1;
 
 const LATCH_MODIFIERS = ['altgr', 'fn', 'ctrl', 'alt', 'super'];
@@ -524,7 +527,10 @@ export const OskKeyboard = GObject.registerClass({
         key.setActive(true);
         switch (def.type) {
         case 'modifier':
-            this._toggleModifier(def.modifier);
+            if (def.modifier === 'super')
+                this._superPress();
+            else
+                this._toggleModifier(def.modifier);
             break;
         case 'hide':
             break;
@@ -539,6 +545,10 @@ export const OskKeyboard = GObject.registerClass({
 
     _onKeyRelease(key) {
         key.setActive(false);
+        if (key.def.modifier === 'super') {
+            this._superRelease();
+            return;
+        }
         if (this._repeatKey === key)
             this._stopRepeat();
         if (key.def.type === 'hide') {
@@ -553,6 +563,8 @@ export const OskKeyboard = GObject.registerClass({
 
     _onKeyCancel(key) {
         key.setActive(false);
+        if (key.def.modifier === 'super')
+            this._clearSuperTimer();
         if (this._repeatKey === key)
             this._stopRepeat();
         if (key._activated) {
@@ -583,6 +595,57 @@ export const OskKeyboard = GObject.registerClass({
             this._repeatId = 0;
         }
         this._repeatKey = null;
+    }
+
+    // ------------------------------------------------------------ Super / Start key
+    // Like a physical Super key: a short tap toggles the overview, a double tap opens the
+    // app grid. A long press (>= SUPER_LONG_PRESS_MS) latches Super for the next key
+    // (Super+<key> shortcuts); tapping a latched Super releases the latch.
+
+    _superPress() {
+        this._clearSuperTimer();
+        if (this._latched.has('super')) {
+            this._latched.delete('super');
+            this._updateModifierState();
+            this._superHandled = true;
+            return;
+        }
+        this._superHandled = false;
+        this._superTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, SUPER_LONG_PRESS_MS, () => {
+            this._superTimerId = 0;
+            this._superHandled = true;
+            this._latched.add('super');
+            this._updateModifierState();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _superRelease() {
+        const wasPending = this._superTimerId !== 0;
+        this._clearSuperTimer();
+        if (this._superHandled || !wasPending)
+            return;
+        const now = GLib.get_monotonic_time() / 1000;
+        const double = now - (this._lastSuperTap ?? 0) < SUPER_DOUBLE_TAP_MS;
+        this._lastSuperTap = double ? 0 : now;
+        this._consumeOneShots();
+        try {
+            if (double && Main.overview.visible)
+                Main.overview.dash.showAppsButton.checked = true; // showApps() is a no-op while shown
+            else if (double)
+                Main.overview.showApps();
+            else
+                Main.overview.toggle();
+        } catch (e) {
+            console.error(`[tablet-osk] overview: ${e}`);
+        }
+    }
+
+    _clearSuperTimer() {
+        if (this._superTimerId) {
+            GLib.source_remove(this._superTimerId);
+            this._superTimerId = 0;
+        }
     }
 
     // ------------------------------------------------------------ modifiers
@@ -699,6 +762,7 @@ export const OskKeyboard = GObject.registerClass({
 
     _onDestroy() {
         this._stopRepeat();
+        this._clearSuperTimer();
         this._settings?.disconnectObject(this);
         this._settings = null;
         this._injector?.destroy();
