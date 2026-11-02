@@ -34,6 +34,14 @@
       <default>true</default>
       <summary>After Enter in a single-line field (form/message sent) or Esc, hide an auto-shown keyboard</summary>
     </key>
+    <key name="move-dock-left" type="b">
+      <default>true</default>
+      <summary>While the docked keyboard is visible, move a bottom Ubuntu Dock to the left edge</summary>
+    </key>
+    <key name="dock-saved-position" type="s">
+      <default>''</default>
+      <summary>Internal: original dock position to restore ('' = nothing to restore)</summary>
+    </key>
     <key name="ignore-physical-keyboard" type="b">
       <default>false</default>
       <summary>Testing: auto-show even while an external keyboard is connected</summary>
