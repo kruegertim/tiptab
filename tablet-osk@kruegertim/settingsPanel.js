@@ -132,6 +132,9 @@ export const SettingsPanel = GObject.registerClass({
 
     /** Re-read pxPerMm() and re-apply sizes (called automatically when the panel is mapped). */
     refreshScale() {
+        // Styles can only be resolved once we are on the stage; 'notify::mapped' calls us again.
+        if (!this.get_stage())
+            return;
         let ppm = 0;
         try {
             ppm = Number(this._pxPerMm()) || 0;
