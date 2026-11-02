@@ -1,0 +1,147 @@
+# Module contract (integration spec)
+
+Extension dir: `tablet-osk@kruegertim/` — GNOME Shell 46, ESM, gjs 1.80.
+Imports: `import St from 'gi://St'`, `import * as Main from 'resource:///org/gnome/shell/ui/main.js'`,
+extension API `resource:///org/gnome/shell/extensions/extension.js`, prefs API
+`resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js`.
+Reference copies of the shell's own JS (keyboard.js, layout.js, edgeDragAction.js, panelMenu.js …):
+`/tmp/claude-1000/-home-tim/c2826ed9-40d5-50d7-a424-44b8bfc778d9/scratchpad/shelljs/org/gnome/shell/ui/`.
+
+Settings: `schemas/org.gnome.shell.extensions.tablet-osk.gschema.xml`
+(keys: layout 'qwertz'|'qwerty', show-f-row b, key-height-mm d, shrink-workarea b, auto-show b,
+ignore-physical-keyboard b, show-panel-icon b, swipe-gestures b, fallback-dpi d).
+
+Every module: no side effects at import time; everything created in constructor/enable is torn
+down in `destroy()` (disconnect all signals — prefer `connectObject(..., this)` / `disconnectObject(this)`,
+remove all GLib sources). No global monkey-patching except where stated.
+
+## A — `layouts.js`, `injector.js`, `keyboard.js`, `stylesheet.css`
+
+`injector.js`
+```js
+export class KeyInjector {
+  constructor()                    // seat.create_virtual_device(KEYBOARD_DEVICE)
+  press(keyval) / release(keyval)  // notify_keyval with Clutter.get_current_event_time()*1000
+  tap(keyval, modifierKeyvals=[])  // press mods, press+release key, release mods (reverse)
+  typeChar(str, modifierKeyvals=[]) // for printable chars: keysym via Clutter.unicode_to_keysym;
+                                    // without modifiers and with Main.inputMethod.currentFocus use
+                                    // Main.inputMethod.commit(str) so output is layout-independent;
+                                    // otherwise notify_keyval (mutter maps keysym -> keycode of current keymap)
+  releaseAll()
+  destroy()
+}
+```
+
+`keyboard.js`
+```js
+export const OskKeyboard = GObject.registerClass({
+  Signals: {'hide-request': {}},          // emitted by the "hide keyboard" key
+}, class OskKeyboard extends St.BoxLayout { // vertical
+  constructor({settings})        // reads layout + show-f-row, rebuilds itself on change
+  get handle()                   // St.Widget drag handle bar at the very top (full width, ~18px
+                                 // incl. a visible grip pill); module B attaches swipe-down to it
+  setKeyHeight(px)               // relayout rows; total height ≈ rows*px + gaps + handle
+  get preferredHeight()          // height in px for the current key height & row count
+  resetModifiers()               // clear latched modifiers (called on hide)
+  destroy()
+});
+```
+Layout spec (15-unit grid, full monitor width, dark keys, red accent #d1281c, labels: main centre,
+shift label top-left, AltGr label bottom-right, Fn label in accent colour):
+- F-row (if show-f-row): Esc, F1–F12 (Fn: mute, vol-, vol+, mic-mute, bright-, bright+, display,
+  wlan, settings, bluetooth, keyboard, favorite → XF86 keysyms), Pos1(Home), Ende(End), Einfg(Insert), Entf(Delete).
+- R1: ^ 1 2 3 4 5 6 7 8 9 0 ß ´ Backspace(2u). Compact mode: Esc is placed first in this row
+  (shrink ^ accordingly) and Fn+1..´ = F1–F12.
+- R2: Tab 1.5, Q W E R T Z U I O P Ü +, ISO-Enter top part 1.5
+- R3: Caps 1.75, A S D F G H J K L Ö Ä #, Enter bottom 1.25 (both Enter parts = one logical key, visually joined)
+- R4: Shift 1, < Y X C V B N M , . -, Bild↑(Prior), ↑, Bild↓(Next)
+- R5: Fn, Strg 1.25, Super, Alt, Space 5.75, AltGr, Hide-key (emits hide-request), ← ↓ →
+  (Fn+← = Pos1, Fn+→ = Ende)
+- Shift: one-shot, double tap = lock (caps-lock style visual). AltGr/Fn/Strg/Alt/Super: one-shot latch
+  (tap = latched for next key, tap again = off). Caps: real Caps_Lock keysym toggle + visual.
+- AltGr labels (de): q@ e€ 7{ 8[ 9] 0} ß\ +~ <| 2² 3³ m µ. Output for AltGr/shift chars is
+  computed by the OSK (commit the resulting character), not by sending ISO_Level3_Shift.
+- QWERTY (us) variant: standard US ANSI keys, row 4 Shift 2u + 10 keys (Z X C V B N M , . /), no <key,
+  `-=[]\;'` placement, Enter single key.
+- Keys with Strg/Alt/Super latched send real modifier keyvals + keysym (e.g. Ctrl+C).
+- Inject keysyms so the output does not depend on the active xkb layout where possible.
+- Key repeat on long press for Backspace/arrows/space/chars (delay 500ms, 50ms interval).
+
+## B — `visibility.js`, `indicator.js`, `physicalKeyboard.js`
+
+```js
+export class PhysicalKeyboardMonitor {   // physicalKeyboard.js
+  constructor(onChanged)                 // onChanged(present:boolean)
+  get present()                          // true if an external (USB/Bluetooth) keyboard is connected
+  destroy()
+}
+```
+Use `Clutter.get_default_backend().get_default_seat()` `list_devices()`, `device-added`/`device-removed`.
+Count KEYBOARD_DEVICE devices that are physical (not virtual: `device.get_device_mode() !== FLOATING`?
+check), excluding names matching built-ins: /AT Translated|i8042|Power Button|Sleep Button|Lid Switch|
+Video Bus|Extra Buttons|Intel HID|HDA|Consumer Control|System Control|virtual|ydotool|gnome-shell/i,
+plus our own virtual device. Mutter exposes device node / vendor / product ids — log the device list
+with console.log once so we can tune it. Note: a Logitech USB receiver (mouse) also registers as
+keyboard → treat "Logitech USB Receiver" keyboard nodes as external keyboard = present? Document the
+decision (we consider any non-builtin keyboard-capable device as external; logging helps tune).
+
+```js
+export class PanelIndicator { // indicator.js — PanelMenu.Button with icon 'input-keyboard-symbolic'
+  constructor({onToggle, settings}) // click/tap toggles; adds itself to Main.panel status area
+                                   // via Main.panel.addToStatusArea(uuid, this); honours show-panel-icon
+  setActive(visible)               // highlight while keyboard visible
+  destroy()
+}
+
+export class VisibilityController { // visibility.js
+  constructor({settings, show, hide, isVisible, getHandle, getKeyboardActor, physicalKeyboard})
+    // show()/hide(): callbacks into extension.js (they animate). isVisible(): bool.
+    // getHandle(): keyboard handle actor for swipe-down. getKeyboardActor(): keyboard container
+    // (clicks on it must NOT count as focus loss).
+  destroy()
+}
+```
+Auto-show/hide (only when settings auto-show && (!physicalKeyboard.present || ignore-physical-keyboard)):
+- Wayland/X11 apps: `Main.inputMethod` signals `'input-panel-state'` (Clutter.InputPanelState.ON/OFF/TOGGLE),
+  `'focus-in'`/`'focus-out'`; shell entries: `global.stage` `notify::key-focus` (focus instanceof Clutter.Text
+  → show). Debounce (≈100–150ms idle) so focus moves between fields do not flicker; hiding on focus-out
+  must be ignored when the focus moved into the keyboard itself.
+- Manual show (icon/swipe) must stay visible until manual hide or until a later focus-out after a
+  focus-in (pick sensible rule; manual open should not instantly close).
+- Swipe up from the bottom screen edge shows (touch via `EdgeDragAction`-like Clutter.GestureAction
+  on global.stage CAPTURE phase, **and** mouse: a thin (≈4px) reactive bottom-edge strip actor
+  added with Main.layoutManager.addTopChrome that recognises press+drag-up > 40px; strip hidden while
+  keyboard visible). Swipe down on the handle (press+drag-down > 40px, touch or mouse) hides; a tap on
+  the handle does nothing. Honour swipe-gestures setting.
+- Top-bar icon toggles.
+
+## C — `workarea.js`, `prefs.js`
+
+```js
+export class MonitorMetrics {          // workarea.js
+  constructor(onChanged)               // reads physical size via D-Bus org.gnome.Mutter.DisplayConfig
+                                       // GetResources (outputs carry 'width-mm'/'height-mm') async;
+                                       // refresh on Main.layoutManager 'monitors-changed'
+  pxPerMm(monitorIndex)                // logical px per mm for that monitor (account for monitor
+                                       // scale: physical px / mm / scale), fallback settings fallback-dpi/25.4
+  keyHeightPx(monitorIndex, mm)        // Math.round(mm * pxPerMm)
+  destroy()
+}
+export class WorkArea {                // manages the keyboard container as layout chrome
+  constructor(actor, settings)         // Main.layoutManager.addChrome(actor, {affectsStruts, trackFullscreen:false})
+                                       // affectsStruts follows shrink-workarea; must reserve space only while
+                                       // shown (verify how layout.js treats hidden actors; if needed re-add chrome
+                                       // or toggle struts on setShown)
+  setShown(bool)
+  destroy()                            // removeChrome
+}
+```
+`prefs.js`: `export default class extends ExtensionPreferences { fillPreferencesWindow(window) }`
+Adw page(s): Layout (combo QWERTZ/QWERTY), "Mit F-Reihe" switch (off = Kompakt), key height
+(SpinRow mm, 7–20 step 0.5), shrink work area switch, auto-show switch, show panel icon, swipe gestures,
+testing group: ignore-physical-keyboard switch. German UI strings.
+
+## Integration — `extension.js` (coordinator)
+Creates container (St.Widget) at bottom of primary monitor, OskKeyboard inside, WorkArea, MonitorMetrics,
+PhysicalKeyboardMonitor, PanelIndicator, VisibilityController; slide animation; suppresses the built-in
+OSK (Main.keyboard) while enabled and restores it on disable.

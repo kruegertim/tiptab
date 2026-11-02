@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="tablet-osk">
+  <enum id="org.gnome.shell.extensions.tablet-osk.Layout">
+    <value nick="qwertz" value="0"/>
+    <value nick="qwerty" value="1"/>
+  </enum>
+  <schema id="org.gnome.shell.extensions.tablet-osk" path="/org/gnome/shell/extensions/tablet-osk/">
+    <key name="layout" enum="org.gnome.shell.extensions.tablet-osk.Layout">
+      <default>'qwertz'</default>
+      <summary>Keyboard layout (qwertz = German, qwerty = US)</summary>
+    </key>
+    <key name="show-f-row" type="b">
+      <default>true</default>
+      <summary>Show the separate function-key row (false = compact, F-keys via Fn on the number row)</summary>
+    </key>
+    <key name="key-height-mm" type="d">
+      <range min="7.0" max="20.0"/>
+      <default>11.5</default>
+      <summary>Physical key height in millimetres</summary>
+    </key>
+    <key name="shrink-workarea" type="b">
+      <default>true</default>
+      <summary>Reserve screen space (strut) while visible so windows shrink instead of being covered</summary>
+    </key>
+    <key name="auto-show" type="b">
+      <default>true</default>
+      <summary>Show automatically when a text field gets focus</summary>
+    </key>
+    <key name="ignore-physical-keyboard" type="b">
+      <default>false</default>
+      <summary>Testing: auto-show even while an external keyboard is connected</summary>
+    </key>
+    <key name="show-panel-icon" type="b">
+      <default>true</default>
+      <summary>Show the toggle icon in the top bar</summary>
+    </key>
+    <key name="swipe-gestures" type="b">
+      <default>true</default>
+      <summary>Enable swipe up from the bottom edge / swipe down on the handle</summary>
+    </key>
+    <key name="fallback-dpi" type="d">
+      <range min="50.0" max="400.0"/>
+      <default>96.0</default>
+      <summary>Pixels per inch used when the monitor's physical size is unknown</summary>
+    </key>
+  </schema>
+</schemalist>
