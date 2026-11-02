@@ -281,9 +281,10 @@ export default class TabletOskExtension extends Extension {
         this._syncThumbHalves(thumb, monitor);
 
         if (this._isFloating) {
+            this._keyboard.setPickSpans(null);
+            this._keyboard.setSideInset(0);
             this._keyboard.width = -1;
             this._keyboard.x_align = Clutter.ActorAlign.FILL;
-            this._container.remove_style_class_name('tosk-container-narrow');
             const width = this._floating.geometry?.width ?? Math.round(monitor.width * 0.7);
             this._applyFloatingHeight(width);
             this._floating.reposition();
@@ -295,18 +296,15 @@ export default class TabletOskExtension extends Extension {
                 this._settings.get_double('thumb-key-height-mm'))
             : this._dockedKeyPx();
         this._keyboard.setKeyHeight(keyPx);
-        // Below the reference height the keyboard gets narrower (centred), keeping
-        // the key aspect ratio; the container (background, input) stays full width.
+        // Below the reference height the keys get a side inset (centred, narrower key
+        // area), keeping the key aspect ratio; the keyboard itself stays full width.
         const refPx = thumb ? 0 : this._referenceKeyPx();
-        if (keyPx < refPx) {
-            this._keyboard.width = Math.round(monitor.width * keyPx / refPx);
-            this._keyboard.x_align = Clutter.ActorAlign.CENTER;
-            this._container.add_style_class_name('tosk-container-narrow');
-        } else {
-            this._keyboard.width = -1;
-            this._keyboard.x_align = Clutter.ActorAlign.FILL;
-            this._container.remove_style_class_name('tosk-container-narrow');
-        }
+        this._keyboard.width = -1;
+        this._keyboard.x_align = Clutter.ActorAlign.FILL;
+        if (!thumb)
+            this._keyboard.setPickSpans(null);
+        const kbW = keyPx < refPx ? Math.round(monitor.width * keyPx / refPx) : monitor.width;
+        this._keyboard.setSideInset((monitor.width - kbW) / 2);
         const height = Math.min(Math.round(this._keyboard.preferredHeight),
             Math.round(monitor.height * 0.6));
         this._container.set_size(monitor.width, height);
@@ -317,8 +315,8 @@ export default class TabletOskExtension extends Extension {
             this._container.translation_y = height;
     }
 
-    // Thumb mode: background panels behind the two halves. They are reactive so taps
-    // between keys don't fall through; the middle third stays free for the app.
+    // Thumb mode: background panels behind the two halves (visual only; the keyboard
+    // picks the half areas itself); the middle third stays free for the app.
     _syncThumbHalves(thumb, _monitor) {
         if (!thumb) {
             this._thumbHalves?.forEach(w => w.hide());
@@ -329,7 +327,7 @@ export default class TabletOskExtension extends Extension {
             this._thumbHalves = [Clutter.ActorAlign.START, Clutter.ActorAlign.END].map(align => {
                 const w = new St.Widget({
                     style_class: 'tosk-thumb-half',
-                    reactive: true,
+                    reactive: false, // visual only; the keyboard picks the half areas
                     x_align: align,
                     x_expand: true, // BinLayout honours x_align only for expanding children
                     y_expand: true,
@@ -350,6 +348,7 @@ export default class TabletOskExtension extends Extension {
         const [left, right] = this._thumbHalves;
         left.width = leftEnd + pad;
         right.width = width - rightStart + pad;
+        kb.setPickSpans([[0, leftEnd + pad], [rightStart - pad, width]]);
         // Suggestion strip over the gap between the halves.
         kb.setBarWidth(Math.max(0, rightStart - leftEnd - 2 * pad), (leftEnd + rightStart - width) / 2);
     }

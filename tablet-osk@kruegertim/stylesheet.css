@@ -16,12 +16,6 @@
     font-weight: bold !important;
 }
 
-/* Docked keyboard narrower than the screen (key height below 13 mm):
- * the side areas get the keyboard background. */
-.tosk-container-narrow {
-    background-color: #262628;
-}
-
 .tosk-keyboard.tosk-floating {
     border-radius: 14px;
     border: 1px solid rgba(255, 255, 255, 0.16);

@@ -664,15 +664,38 @@ export const OskKeyboard = GObject.registerClass({
     }
 
     // Thumb mode: the keyboard stays reactive (Clutter only emits captured-event on
-    // reactive ancestors, which the key/swipe handling relies on) but does not pick
-    // its own box, so the transparent middle passes touches to the app.
+    // reactive ancestors, which the key/swipe handling relies on) but picks only the
+    // two halves, so the transparent middle passes touches to the app while taps and
+    // swipes on the background between keys still reach the keyboard.
     vfunc_pick(pickContext) {
-        if (!this._thumb) {
+        if (!this._pickSpans) {
             super.vfunc_pick(pickContext);
             return;
         }
+        if (this.reactive) {
+            for (const [x1, x2] of this._pickSpans)
+                this.pick_box(pickContext, Clutter.ActorBox.new(x1, 0, x2, this.height));
+        }
         for (const child of this.get_children())
             child.pick(pickContext);
+    }
+
+    /**
+     * Horizontal [x1, x2] spans (keyboard coords, may extend beyond the keyboard) picked
+     * as the keyboard background instead of its own box; null = default picking.
+     */
+    setPickSpans(spans) {
+        this._pickSpans = spans ?? null;
+    }
+
+    /** Docked narrow mode: extra horizontal inset (px) on both sides of the keys. */
+    setSideInset(px) {
+        px = Math.max(0, Math.round(px));
+        if (px === (this._sideInset ?? 0))
+            return;
+        this._sideInset = px;
+        this._applyContainerStyle();
+        this.queue_relayout();
     }
 
     get _totalUnits() {
@@ -804,7 +827,11 @@ export const OskKeyboard = GObject.registerClass({
 
     _applyContainerStyle() {
         const p = this._pad;
-        let style = `padding: 0 ${p}px ${p}px ${p}px; spacing: 0;`;
+        // Side inset: docked keyboard narrower than the screen (keys keep their
+        // proportions). The keyboard still spans the full width, so the side areas
+        // have its background and take part in swipe-down.
+        const side = p + (this._sideInset ?? 0);
+        let style = `padding: 0 ${side}px ${p}px ${side}px; spacing: 0;`;
         if (this._floating)
             style += ` border-width: ${FLOAT_BORDER_PX}px;`;
         // Label colour (inherited by all keys): grey level from label-brightness,
