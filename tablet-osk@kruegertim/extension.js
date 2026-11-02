@@ -41,24 +41,16 @@ export default class TabletOskExtension extends Extension {
 
         this._metrics = new MonitorMetrics(() => this._relayout(), this._settings);
 
-        this._panel = new SettingsPanel({
-            settings: this._settings,
-            pxPerMm: () => this._metrics.pxPerMm(Main.layoutManager.primaryIndex),
-        });
-        this._panel.x_expand = true;
-        this._panel.y_expand = true;
-        this._panel.visible = false;
-        this._container.add_child(this._panel);
+        this._panel = null; // created lazily on first gear tap (needs to be on stage)
 
         this._keyboard.connectObject(
             'hide-request', () => {
                 this._hide();
                 this._visibility?.notifyVisibleChanged();
             },
-            'settings-request', () => this._setPanelVisible(!this._panel.visible),
+            'settings-request', () => this._setPanelVisible(!this._panel?.visible),
             'layout-changed', () => this._afterRebuild(),
             this);
-        this._panel.connectObject('close-request', () => this._setPanelVisible(false), this);
 
         this._floating = new FloatingController({
             settings: this._settings,
@@ -241,9 +233,24 @@ export default class TabletOskExtension extends Extension {
         });
     }
 
-    _setPanelVisible(visible) {
-        if (!this._panel)
+    _ensurePanel() {
+        if (this._panel)
             return;
+        this._panel = new SettingsPanel({
+            settings: this._settings,
+            pxPerMm: () => this._metrics.pxPerMm(Main.layoutManager.primaryIndex),
+        });
+        this._panel.x_expand = true;
+        this._panel.y_expand = true;
+        this._panel.visible = false;
+        this._container.add_child(this._panel);
+        this._panel.connectObject('close-request', () => this._setPanelVisible(false), this);
+    }
+
+    _setPanelVisible(visible) {
+        if (!visible && !this._panel)
+            return;
+        this._ensurePanel();
         this._panel.visible = visible;
         this._keyboard.opacity = visible ? 0 : 255;
         this._keyboard.reactive = !visible;

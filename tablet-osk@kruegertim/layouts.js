@@ -27,7 +27,7 @@ export const FALLBACK_KEYVALS = {
 // ---------------------------------------------------------------- helpers
 
 function ch(id, char, shiftChar, altgrChar, w = 1) {
-    const letter = char.length === 1 && char.toLowerCase() !== char.toUpperCase();
+    const letter = char.length === 1 && char.toUpperCase().length === 1 && char.toLowerCase() !== char.toUpperCase();
     const key = {id, w, type: 'char', char, label: letter ? char.toUpperCase() : char, repeat: true};
     if (letter) {
         key.letter = true;
