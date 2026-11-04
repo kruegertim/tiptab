@@ -546,6 +546,11 @@ export class VisibilityController {
             return; // multi-line: Enter is just a newline
         this._clearSubmit();
         this._submitShellText = shellText;
+        // The entry may be destroyed before the timer fires (unlock/login prompt after
+        // Enter); reading .text from a disposed Clutter.Text throws.
+        shellText?.connectObject('destroy', () => {
+            this._submitShellText = null;
+        }, this._submitTag);
         this._submitId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, SUBMIT_WINDOW_MS, () => {
             this._submitId = 0;
             this._checkSubmitCleared(true);
@@ -561,7 +566,12 @@ export class VisibilityController {
         if (!this._submitId && !final)
             return;
         const st = this._submitShellText;
-        const text = st ? st.text : Main.inputMethod._surroundingText;
+        let text = null;
+        try {
+            text = st ? st.text : Main.inputMethod._surroundingText;
+        } catch {
+            text = null;   // entry already disposed
+        }
         if (typeof text === 'string' && text.length === 0 && this._mode === 'auto' && this._isShown()) {
             this._clearSubmit();
             this._cancelTimers();
@@ -577,6 +587,10 @@ export class VisibilityController {
             this._submitId = 0;
         }
         Main.inputMethod.disconnectObject(this._submitTag);
+        try {
+            this._submitShellText?.disconnectObject(this._submitTag);
+        } catch {}
+        this._submitShellText = null;
     }
 
     // ---- focus tracking ----

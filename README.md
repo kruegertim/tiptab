@@ -30,6 +30,11 @@ Deinstallation: `gnome-extensions disable tablet-osk@kruegertim` und den Ordner
   (`journalctl --user -b | grep tablet-osk`). Ein Logitech-USB-Empfänger zählt als Tastatur; zum Testen am Laptop
   in den Einstellungen „Physische Tastatur ignorieren“ einschalten.
 
+- Chrome, Chromium, Edge, Brave: Diese Browser melden Webformular-Felder unter Wayland nur mit der Startoption
+  `--enable-wayland-ime` an GNOME, sonst blendet sich die Tastatur beim Antippen nicht ein. `tools/chrome-wayland-ime.sh`
+  legt dafür angepasste Starter in `~/.local/share/applications` an (`--remove` macht es rückgängig). Danach den Browser
+  ganz beenden und neu starten. Firefox, GTK-Apps und Systemdialoge brauchen das nicht.
+
 Aufbau der Module: siehe `CONTRACT.md`.
 
 ## Projektstand / Branches
