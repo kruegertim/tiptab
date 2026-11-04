@@ -38,6 +38,7 @@ const SWIPE_SLOP = 0.25;    // start following the finger
 const SWIPE_TRIGGER = 1.0;  // the sequence becomes a swipe (pending key cancelled)
 const SWIPE_COMMIT = 0.5;   // on release: still this far down -> hide, else snap back
 
+const FLASH_PEAK_ALPHA = 0.85; // press flash: white over the key background
 const DIM_OPACITY = 115;    // ~45 % for inactive keycap glyphs
 
 const LATCH_MODIFIERS = ['altgr', 'fn', 'ctrl', 'alt', 'super'];
@@ -212,6 +213,7 @@ class OskKey extends St.Widget {
         this.extendUp = def.enterPart === 'bottom';
 
         this._buildGlyphs(def, keyboard._superSymbol);
+        this.connect('destroy', () => this._stopFlash());
 
         this._toskTarget = {
             down: st => keyboard._keyDown(this, st),
@@ -389,9 +391,57 @@ class OskKey extends St.Widget {
     applyStyle() {
         if (this._padStyle === undefined)
             return;
-        this.style = this._padStyle + keyGlowCss(this._keyboard.keyGlow, this._h,
+        let style = this._padStyle + keyGlowCss(this._keyboard.keyGlow, this._h,
             this._keyboard._gap, this.def.enterPart, this.has_style_class_name('tosk-locked'),
             this._keyboard.keyGlowWidth);
+        // Press flash: an inset shadow as wide as the key paints translucent white
+        // over the key background (labels stay on top). Overrides the glow while
+        // it fades out.
+        if (this._flashA > 0.005) {
+            const spread = Math.ceil(this._h ?? 60);
+            style += ` box-shadow: inset 0 0 0 ${spread}px rgba(255, 255, 255, ${this._flashA.toFixed(3)});`;
+        }
+        this.style = style;
+    }
+
+    // Light the key up brightly and let it fade out over `ms` (0 = off).
+    flash(ms) {
+        for (const k of [this, this.twin]) {
+            if (k)
+                k._flashOnce(ms);
+        }
+    }
+
+    _flashOnce(ms) {
+        this._stopFlash();
+        if (!(ms > 0))
+            return;
+        const tl = new Clutter.Timeline({actor: this, duration: ms});
+        tl.set_progress_mode(Clutter.AnimationMode.EASE_IN_QUAD);
+        tl.connect('new-frame', () => {
+            this._flashA = FLASH_PEAK_ALPHA * (1 - tl.get_progress());
+            this.applyStyle();
+        });
+        tl.connect('stopped', () => {
+            if (this._flashTl !== tl)
+                return;
+            this._flashTl = null;
+            this._flashA = 0;
+            this.applyStyle();
+        });
+        this._flashTl = tl;
+        this._flashA = FLASH_PEAK_ALPHA;
+        this.applyStyle();
+        tl.start();
+    }
+
+    _stopFlash() {
+        const tl = this._flashTl;
+        if (!tl)
+            return;
+        this._flashTl = null;
+        tl.stop();
+        this._flashA = 0;
     }
 
     // Highlight the glyph that the next tap produces; dim the others while
@@ -661,6 +711,10 @@ export const OskKeyboard = GObject.registerClass({
     // case unless Shift/Caps is active.
     get lowercaseLabels() {
         return this._hasKey('letter-case') && this._settings.get_string('letter-case') === 'shift';
+    }
+
+    get pressFlashMs() {
+        return this._hasKey('press-flash-ms') ? this._settings.get_int('press-flash-ms') : 0;
     }
 
     get keyGlowWidth() {
@@ -1233,6 +1287,7 @@ export const OskKeyboard = GObject.registerClass({
     _keyDown(key, st) {
         const def = key.def;
         key.setActive(true);
+        key.flash(this.pressFlashMs);
         if (def.type === 'modifier') {
             this._modDown(def.modifier, st);
             return;
