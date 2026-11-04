@@ -216,24 +216,25 @@ class TabletOskGlyphGridLayout extends Clutter.LayoutManager {
 
 // Glowing key rim: a thin light border plus a soft outer glow, so the dark keys
 // stand out from the keyboard background. strength 0 = off, 1 = strongest.
-// ISO Enter halves leave out the border on the joining side, and the lower half
-// gets no outer glow (it would shine onto the upper half at the seam).
-export function keyGlowCss(strength, h, gap, enterPart = null, locked = false, width = 2) {
+// Two-part keys (ISO Enter, angled Shift) leave out the border on the joining
+// side, and the lower part gets no outer glow (it would shine onto the upper
+// part at the seam).
+export function keyGlowCss(strength, h, gap, joinPart = null, locked = false, width = 2) {
     const s = Math.min(1, Math.max(0, strength ?? 0));
     if (s <= 0.001)
         return '';
     const bw = h >= 72 ? 2 : 1;
     const borderA = (0.12 + 0.33 * s).toFixed(3);
     let widths = `${bw}px`;
-    if (enterPart === 'top')
+    if (joinPart === 'top')
         widths = `${bw}px ${bw}px 0 ${bw}px`;
-    else if (enterPart === 'bottom')
+    else if (joinPart === 'bottom')
         widths = `0 ${bw}px ${bw}px ${bw}px`;
     let css = ` border-width: ${widths}; border-color: rgba(255, 255, 255, ${borderA});`;
     if (locked) {
         // keep the white "locked" bar of .tosk-locked (only one shadow possible in St)
         css += ' box-shadow: inset 0 -3px 0 0 #ffffff;';
-    } else if (enterPart !== 'bottom') {
+    } else if (joinPart !== 'bottom') {
         // Halo width from the key-glow-width setting (px), capped at half the key
         // gap so the halos of two neighbours meet at most in the middle and never
         // reach under the neighbouring key.
@@ -257,7 +258,7 @@ class OskKey extends St.Widget {
         });
         this.def = def;
         this.units = def.w;
-        this.twin = null; // other half of the ISO Enter key
+        this.twin = null; // other part of the ISO Enter / angled Shift key
         this._keyboard = keyboard;
 
         if (def.special)
@@ -273,6 +274,13 @@ class OskKey extends St.Widget {
         // ISO Enter: the lower half reaches up through the row gap to join the upper
         // half. (Extending the upper half down instead would cover the gap above '#'.)
         this.extendUp = def.enterPart === 'bottom';
+        // Angled Shift: the upper stub reaches down into its wider lower part.
+        if (def.joinPart === 'top')
+            this.add_style_class_name('tosk-shift-top');
+        if (def.joinPart === 'bottom')
+            this.add_style_class_name('tosk-shift-bottom');
+        this.extendDown = def.joinPart === 'top';
+        this.joinPart = def.enterPart ?? def.joinPart ?? null;
 
         this._buildGlyphs(def, keyboard._superSymbol);
         this.connect('destroy', () => this._stopFlash());
@@ -456,7 +464,7 @@ class OskKey extends St.Widget {
         if (this._padStyle === undefined)
             return;
         let style = this._padStyle + keyGlowCss(this._keyboard.keyGlow, this._h,
-            this._keyboard._gap, this.def.enterPart, this.has_style_class_name('tosk-locked'),
+            this._keyboard._gap, this.joinPart, this.has_style_class_name('tosk-locked'),
             this._keyboard.keyGlowWidth);
         // Press flash: an inset shadow as wide as the key paints translucent white
         // over the key background (labels stay on top). Overrides the glow while
@@ -596,7 +604,8 @@ class KeyRow extends St.Widget {
             cum += child.units;
             const x2 = Math.max(x1, content.x1 + Math.round(cum * unit) - gap);
             const y1 = content.y1 - (child.extendUp ? gap : 0);
-            child.allocate(Clutter.ActorBox.new(x1, y1, x2, content.y2));
+            const y2 = content.y2 + (child.extendDown ? gap : 0);
+            child.allocate(Clutter.ActorBox.new(x1, y1, x2, y2));
         }
     }
 });
@@ -1180,6 +1189,7 @@ export const OskKeyboard = GObject.registerClass({
             });
 
         const enterParts = [];
+        const joinGroups = {};
         for (const rowDef of this._rows) {
             const row = new KeyRow(this);
             for (const def of rowDef) {
@@ -1197,12 +1207,20 @@ export const OskKeyboard = GObject.registerClass({
                     (this._modifierKeys[def.modifier] ??= []).push(key); // split: two Shift keys
                 if (def.enterPart)
                     enterParts.push(key);
+                if (def.joinGroup)
+                    (joinGroups[def.joinGroup] ??= []).push(key);
             }
             this._rowsBox.add_child(row);
         }
         if (enterParts.length === 2) {
             enterParts[0].twin = enterParts[1];
             enterParts[1].twin = enterParts[0];
+        }
+        for (const parts of Object.values(joinGroups)) {
+            if (parts.length === 2) {
+                parts[0].twin = parts[1];
+                parts[1].twin = parts[0];
+            }
         }
 
         for (const k of this._keys)

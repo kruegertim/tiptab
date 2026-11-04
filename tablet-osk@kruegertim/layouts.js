@@ -90,8 +90,19 @@ function tab() {
     return sp('Tab', '⇥', 'Tab', 1.5);
 }
 
-function caps() {
-    return mod('Caps', '⇪', 'caps', 1.75);
+function caps(w = 1.75) {
+    return mod('Caps', '⇪', 'caps', w);
+}
+
+// Angled left Shift (QWERTZ), like the ISO Enter mirrored: the upper part is a
+// stub at the left edge of the Caps row and reaches down through the row gap
+// into the wide lower part in the Shift row.
+function shiftTop(w) {
+    return mod('Shift', '', 'shift', w, {joinPart: 'top', joinGroup: 'shift'});
+}
+
+function shiftBottom(w) {
+    return mod('Shift', '⇧', 'shift', w, {joinPart: 'bottom', joinGroup: 'shift'});
 }
 
 function navCluster(priorW = 1) {
@@ -161,23 +172,24 @@ function qwertz(compact) {
         ch('plus', '+', '*', '~'),
         {id: 'Return', w: 1.5, type: 'enter', keysym: 'Return', label: '↵', enterPart: 'top', special: true},
     ];
+    // 0.75 (Shift stub) + 1 (Caps) = the former 1.75 Caps
     const r3 = [
-        caps(),
+        shiftTop(0.75),
+        caps(1),
         ch('a', 'a'), ch('s', 's'), ch('d', 'd'), ch('f', 'f'), ch('g', 'g'), ch('h', 'h'),
         ch('j', 'j'), ch('k', 'k'), ch('l', 'l'),
         ch('odiaeresis', 'ö'), ch('adiaeresis', 'ä'),
         ch('numbersign', '#', '\''),
         {id: 'Return', w: 1.25, type: 'enter', keysym: 'Return', label: '', enterPart: 'bottom', special: true},
     ];
-    // Left Shift 1.5 u: the <> key and Bild↑ give up 0.25 u each, so ↑ stays
-    // exactly above ↓.  1.5 + 0.75 + 10 + 0.75 + 1 + 1 = 15
+    // Left Shift 1.5 u at the cost of the <> key (0.5 u).  1.5 + 0.5 + 10 + 3 = 15
     const r4 = [
-        mod('Shift', '⇧', 'shift', 1.5),
-        ch('less', '<', '>', '|', 0.75),
+        shiftBottom(1.5),
+        ch('less', '<', '>', '|', 0.5),
         ch('y', 'y'), ch('x', 'x'), ch('c', 'c'), ch('v', 'v'), ch('b', 'b'), ch('n', 'n'),
         ch('m', 'm', null, 'µ'),
         ch('comma', ',', ';'), ch('period', '.', ':'), ch('minus', '-', '_'),
-        ...navCluster(0.75),
+        ...navCluster(),
     ];
     return [r1, r2, r3, r4, bottomRow()];
 }
@@ -281,12 +293,12 @@ function splitQwertz() {
             ch('z', 'z'), ch('u', 'u'), ch('i', 'i'), ch('o', 'o'), ch('p', 'p'), ch('udiaeresis', 'ü'),
             ch('plus', '+', '*', '~'),
             {id: 'Return', w: 1.5, type: 'enter', keysym: 'Return', label: '↵', enterPart: 'top', special: true}],
-        [mod('Caps', '⇪', 'caps', 2), ch('a', 'a'), ch('s', 's'), ch('d', 'd'), ch('f', 'f'), ch('g', 'g'),
+        [shiftTop(0.75), caps(1.25), ch('a', 'a'), ch('s', 's'), ch('d', 'd'), ch('f', 'f'), ch('g', 'g'),
             gap(),
             ch('h', 'h'), ch('j', 'j'), ch('k', 'k'), ch('l', 'l'), ch('odiaeresis', 'ö'),
             ch('adiaeresis', 'ä'), ch('numbersign', '#', '\''),
             {id: 'Return', w: 1.5, type: 'enter', keysym: 'Return', label: '', enterPart: 'bottom', special: true}],
-        [mod('Shift', '⇧', 'shift', 1.25), ch('less', '<', '>', '|', 0.75), ch('y', 'y'), ch('x', 'x'), ch('c', 'c'),
+        [shiftBottom(1.5), ch('less', '<', '>', '|', 0.5), ch('y', 'y'), ch('x', 'x'), ch('c', 'c'),
             ch('v', 'v'), ch('b', 'b'), gap(),
             ch('n', 'n'), ch('m', 'm', null, 'µ'), ch('comma', ',', ';'), ch('period', '.', ':'),
             ch('minus', '-', '_'), ...splitShiftTail()],

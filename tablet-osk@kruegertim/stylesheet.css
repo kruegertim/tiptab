@@ -114,6 +114,15 @@
     border-radius: 0 0 6px 6px;
 }
 
+/* Angled left Shift: stub in the Caps row reaching down into the wide lower part */
+.tosk-shift-top {
+    border-radius: 6px 6px 0 0;
+}
+
+.tosk-shift-bottom {
+    border-radius: 0 6px 6px 6px;
+}
+
 
 /* keycap glyphs (shift / base / AltGr), all the same size and colour;
  * inactive levels are dimmed via opacity from keyboard.js */
