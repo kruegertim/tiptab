@@ -171,7 +171,9 @@ export function keyGlowCss(strength, h, gap, enterPart = null, locked = false) {
         // keep the white "locked" bar of .tosk-locked (only one shadow possible in St)
         css += ' box-shadow: inset 0 -3px 0 0 #ffffff;';
     } else if (enterPart !== 'bottom') {
-        const blur = Math.max(2, Math.min(gap ?? 4, Math.round(h * 0.09)));
+        // Narrow halo: at most a third of the key gap, so it never reaches under
+        // the neighbouring keys (gap 3–8 px -> 1–2 px).
+        const blur = Math.max(1, Math.floor((gap ?? 4) / 3));
         const glowA = (0.08 + 0.32 * s).toFixed(3);
         css += ` box-shadow: 0 0 ${blur}px 0 rgba(255, 255, 255, ${glowA});`;
     }
