@@ -193,6 +193,20 @@ export default class TabletOskPreferences extends ExtensionPreferences {
         });
         modeGroup.add(glowRow);
 
+        const glowWidthRow = new Adw.SpinRow({
+            title: 'Breite des Leuchtrands (px)',
+            subtitle: 'Höchstens bis zur Mitte des Tastenabstands',
+            digits: 0,
+            adjustment: new Gtk.Adjustment({
+                lower: 1,
+                upper: 6,
+                step_increment: 1,
+                page_increment: 1,
+            }),
+        });
+        settings.bind('key-glow-width', glowWidthRow, 'value', Gio.SettingsBindFlags.DEFAULT);
+        modeGroup.add(glowWidthRow);
+
         const resetRow = new Adw.ActionRow({
             title: 'Position zurücksetzen',
             subtitle: 'Schwebende Tastatur wieder zentriert am unteren Rand mit Standardbreite',

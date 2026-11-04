@@ -155,7 +155,7 @@ class TabletOskGlyphGridLayout extends Clutter.LayoutManager {
 // stand out from the keyboard background. strength 0 = off, 1 = strongest.
 // ISO Enter halves leave out the border on the joining side, and the lower half
 // gets no outer glow (it would shine onto the upper half at the seam).
-export function keyGlowCss(strength, h, gap, enterPart = null, locked = false) {
+export function keyGlowCss(strength, h, gap, enterPart = null, locked = false, width = 2) {
     const s = Math.min(1, Math.max(0, strength ?? 0));
     if (s <= 0.001)
         return '';
@@ -171,9 +171,11 @@ export function keyGlowCss(strength, h, gap, enterPart = null, locked = false) {
         // keep the white "locked" bar of .tosk-locked (only one shadow possible in St)
         css += ' box-shadow: inset 0 -3px 0 0 #ffffff;';
     } else if (enterPart !== 'bottom') {
-        // Narrow halo: at most a third of the key gap, so it never reaches under
-        // the neighbouring keys (gap 3–8 px -> 1–2 px).
-        const blur = Math.max(1, Math.floor((gap ?? 4) / 3));
+        // Halo width from the key-glow-width setting (px), capped at half the key
+        // gap so the halos of two neighbours meet at most in the middle and never
+        // reach under the neighbouring key.
+        const maxBlur = Math.max(1, Math.floor((gap ?? 4) / 2));
+        const blur = Math.min(maxBlur, Math.max(1, Math.round(width ?? 2)));
         const glowA = (0.08 + 0.32 * s).toFixed(3);
         css += ` box-shadow: 0 0 ${blur}px 0 rgba(255, 255, 255, ${glowA});`;
     }
@@ -388,7 +390,8 @@ class OskKey extends St.Widget {
         if (this._padStyle === undefined)
             return;
         this.style = this._padStyle + keyGlowCss(this._keyboard.keyGlow, this._h,
-            this._keyboard._gap, this.def.enterPart, this.has_style_class_name('tosk-locked'));
+            this._keyboard._gap, this.def.enterPart, this.has_style_class_name('tosk-locked'),
+            this._keyboard.keyGlowWidth);
     }
 
     // Highlight the glyph that the next tap produces; dim the others while
@@ -585,10 +588,8 @@ export const OskKeyboard = GObject.registerClass({
             'changed::layout', () => this._rebuild(),
             'changed::show-f-row', () => this._rebuild(),
             'changed::label-brightness', () => this._applyContainerStyle(),
-            'changed::key-glow', () => {
-                for (const k of this._keys)
-                    k.applyStyle();
-            },
+            'changed::key-glow', () => this._applyKeyStyles(),
+            'changed::key-glow-width', () => this._applyKeyStyles(),
             'changed::suggestions', () => this._syncBarVisible(),
             'changed::suggestion-bar-position', () => this._syncBarPosition(),
             'changed::super-symbol', () => {
@@ -639,8 +640,17 @@ export const OskKeyboard = GObject.registerClass({
             ? this._settings.get_int('modifier-hold-ms') : DEFAULT_HOLD_MS;
     }
 
+    _applyKeyStyles() {
+        for (const k of this._keys)
+            k.applyStyle();
+    }
+
     get keyGlow() {
         return this._hasKey('key-glow') ? this._settings.get_double('key-glow') : 0;
+    }
+
+    get keyGlowWidth() {
+        return this._hasKey('key-glow-width') ? this._settings.get_int('key-glow-width') : 2;
     }
 
     _swipeEnabled() {
