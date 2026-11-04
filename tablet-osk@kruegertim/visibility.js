@@ -3,6 +3,8 @@
 //
 // Rules:
 //  - "Text focus" = Main.inputMethod 'input-panel-state' ON (Wayland text-input / IBus
+//    clients; for clients that never request the panel, e.g. Chrome, the first
+//    text-input activity after a focus-out)
 //    clients) or an editable Clutter.Text holding the stage key focus (shell entries).
 //    Main.inputMethod has no focus-in/focus-out signals in GNOME 46 (only commit,
 //    cursor-location-changed, delete-surrounding, input-panel-state, request-surrounding,
@@ -296,6 +298,17 @@ export class VisibilityController {
 
         Main.inputMethod.connectObject('input-panel-state',
             (_im, state) => this._onPanelState(state), this);
+        // Fallback focus-in for clients that enable text-input but never ask for the
+        // input panel (Chrome with --enable-wayland-ime): their first text-input
+        // activity after a focus-out counts as ON. Focus-out still comes as OFF from
+        // the shell's InputMethod.
+        this._imActive = false;
+        Main.inputMethod.connectObject(
+            'cursor-location-changed', () => this._onImActivity('cursor'),
+            'request-surrounding', () => this._onImActivity('request-surrounding'),
+            'notify::content-purpose', () => this._onImActivity('purpose'),
+            'notify::content-hints', () => this._onImActivity('hints'),
+            this);
         global.stage.connectObject('notify::key-focus',
             () => this._onKeyFocusChanged(), this);
 
@@ -608,7 +621,28 @@ export class VisibilityController {
             this._focusOut();
     }
 
+    _imHasFocus() {
+        // Private field of the shell's InputMethod (set in vfunc_focus_in, cleared in
+        // vfunc_focus_out). If it ever goes away, trust the activity itself.
+        const im = Main.inputMethod;
+        return '_currentFocus' in im ? !!im._currentFocus : true;
+    }
+
+    _onImActivity(what) {
+        if (this._imActive || this._imeWants || !this._imHasFocus())
+            return;
+        this._imActive = true;
+        console.log(`${LOG_PREFIX} text-input activity (${what}) without input-panel-state ON ` +
+            `→ treating as focus-in (purpose ${Main.inputMethod.content_purpose ?? '?'})`);
+        this._imeWants = true;
+        this._focusIn();
+    }
+
     _onPanelState(state) {
+        if (state === Clutter.InputPanelState.OFF)
+            this._imActive = false;
+        else
+            this._imActive = true;
         // One line per app text-field focus change, so "no auto-show in app X" can be
         // told apart from "app X never reports its fields" in the journal.
         console.log(`${LOG_PREFIX} input-panel-state ${state} (auto allowed: ${this._autoAllowed()}, ` +
