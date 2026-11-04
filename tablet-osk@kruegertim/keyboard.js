@@ -351,7 +351,7 @@ class OskKey extends St.Widget {
         const big = Math.round(h * 0.4);
         const glyph = Math.round(h * 0.32);
         const small = Math.max(7, Math.round(h * 0.2));
-        const narrow = this.units < 0.75; // compact-mode Esc / ^ (0.5 u)
+        const narrow = this.units < 0.8; // compact Esc / ^ (0.5 u), <> and Bild↑ (0.75 u)
         const padV = Math.round(h * 0.07), padH = Math.round(h * (narrow ? 0.04 : 0.11));
         this._padStyle = `padding: ${padV}px ${padH}px;`;
         this._h = h;
