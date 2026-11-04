@@ -71,6 +71,68 @@ const S = Clutter.ActorAlign.START, E = Clutter.ActorAlign.END, C = Clutter.Acto
 // ascent/descent, so they are identical on every key of a given height.
 const GLYPH_FONT_FAMILIES = 'Liberation Sans,Nimbus Sans,Noto Sans,sans-serif';
 
+// Hyphen and underscore are drawn as bars instead of font glyphs: in the bold key
+// font the hyphen is so short it looks like a dot and the underscore is much
+// thinner. Both bars get the same thickness; the hyphen sits at mid x-height,
+// the underscore just below the baseline. Behaves like a St.Label for
+// GlyphGridLayout (text + preferred size with the font's line metrics).
+const DASH_GLYPHS = new Set(['-', '_']);
+const FONT_ASCENT = 0.905;  // Liberation Sans line metrics (em)
+const FONT_DESCENT = 0.212;
+
+const DashGlyph = GObject.registerClass(
+class TabletOskDashGlyph extends St.Widget {
+    _init(text, styleClass) {
+        super._init({style_class: styleClass});
+        this.text = text;
+        this._px = 16;
+        this._bar = new St.Widget();
+        this.add_child(this._bar);
+    }
+
+    setFontPx(px) {
+        if (px === this._px)
+            return;
+        this._px = px;
+        this.queue_relayout();
+    }
+
+    vfunc_get_preferred_width(_forHeight) {
+        const w = Math.round(this._px * 0.56);
+        return [w, w];
+    }
+
+    vfunc_get_preferred_height(_forWidth) {
+        const h = Math.round(this._px * (FONT_ASCENT + FONT_DESCENT));
+        return [h, h];
+    }
+
+    vfunc_allocate(box) {
+        this.set_allocation(box);
+        const px = this._px;
+        const t = Math.max(2, Math.round(px * 0.12));
+        const baseline = Math.round(px * FONT_ASCENT);
+        let x1, x2, y1;
+        if (this.text === '_') {
+            x1 = 0;
+            x2 = Math.round(px * 0.56);
+            y1 = baseline + Math.round(px * 0.07);
+        } else {
+            x1 = Math.round(px * 0.04);
+            x2 = Math.round(px * 0.5);
+            y1 = Math.round(baseline - px * 0.27 - t / 2);
+        }
+        this._bar.allocate(new Clutter.ActorBox({x1, y1, x2, y2: y1 + t}));
+    }
+
+    vfunc_style_changed() {
+        super.vfunc_style_changed();
+        // bar in the inherited text colour (label-brightness, fn/latched states)
+        const c = this.get_theme_node().get_foreground_color();
+        this._bar.style = `background-color: rgba(${c.red}, ${c.green}, ${c.blue}, ${(c.alpha / 255).toFixed(3)});`;
+    }
+});
+
 const GlyphGridLayout = GObject.registerClass(
 class TabletOskGlyphGridLayout extends Clutter.LayoutManager {
     _init(slots) {
@@ -269,7 +331,8 @@ class OskKey extends St.Widget {
                 // Real keycap arrangement: shift top-left, base bottom-left, AltGr
                 // bottom-right.
                 this._multi = true;
-                const glyph = (cls, text) => new St.Label({text, style_class: cls});
+                const glyph = (cls, text) => DASH_GLYPHS.has(text)
+                    ? new DashGlyph(text, cls) : new St.Label({text, style_class: cls});
                 const g = {base: glyph('tosk-glyph', base), shift: null, altgr: null};
                 if (shift)
                     g.shift = glyph('tosk-glyph', shift);
@@ -363,6 +426,7 @@ class OskKey extends St.Widget {
             for (const g of Object.values(this._glyphs)) {
                 if (g)
                     g.style = `font-size: ${glyph}px;`;
+                g?.setFontPx?.(glyph);
             }
             this._gridLayout.setFontPx(glyph);
         } else if (this._main) {
