@@ -1265,6 +1265,10 @@ export const OskKeyboard = GObject.registerClass({
     _startRepeat(key, st) {
         this._stopRepeat();
         this._repeatSt = st;
+        // A modal dialog (polkit, unlock screen) that was already grabbing when the key
+        // went down forwards the release to us (ModalBridge), so only a grab that
+        // appears later means the release will never arrive.
+        const grabAtPress = global.stage.get_grab_actor();
         this._repeatId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, REPEAT_DELAY_MS, () => {
             // First output after the hold delay; the release will then not fire again.
             st.fired = true;
@@ -1273,7 +1277,7 @@ export const OskKeyboard = GObject.registerClass({
                 // Stop if the key is gone or someone else grabbed the input (modal UI):
                 // then we will never see the release event.
                 const grab = global.stage.get_grab_actor();
-                if (!key.mapped || (grab && !this.contains(grab)) ||
+                if (!key.mapped || (grab && grab !== grabAtPress && !this.contains(grab)) ||
                     this._withExtraMods(st, () => this._isCombo(st.def ?? key.def))) {
                     this._repeatId = 0;
                     this._repeatSt = null;

@@ -14,6 +14,7 @@ import {VisibilityController} from './visibility.js';
 import {SettingsPanel} from './settingsPanel.js';
 import {FloatingController} from './floating.js';
 import {DockMover} from './dock.js';
+import {ModalBridge} from './modalBridge.js';
 import {PredictController} from './predictController.js';
 import {SPLIT_TOTAL_UNITS, SPLIT_LEFT_UNITS, SPLIT_GAP_UNITS} from './layouts.js';
 
@@ -46,6 +47,9 @@ export default class TabletOskExtension extends Extension {
         this._keyboard.x_expand = true;
         this._keyboard.y_expand = true;
         this._container.add_child(this._keyboard);
+        // Lets the keyboard work while polkit/keyring/unlock dialogs grab the input.
+        this._modalBridge = new ModalBridge();
+        this._modalBridge.addRoot(this._container);
         this._predict = new PredictController({
             settings: this._settings,
             keyboard: this._keyboard,
@@ -61,7 +65,11 @@ export default class TabletOskExtension extends Extension {
                 this._hide();
                 this._visibility?.notifyVisibleChanged();
             },
-            'settings-request', () => this._setPanelVisible(!this._panel?.visible),
+            'settings-request', () => {
+                // No settings from the lock screen.
+                if (!Main.sessionMode.isLocked)
+                    this._setPanelVisible(!this._panel?.visible);
+            },
             'layout-changed', () => this._afterRebuild(),
             'key-sent', (_k, name) => this._visibility?.onKeySent(name),
             'swipe-progress', (_k, dy) => {
@@ -99,6 +107,7 @@ export default class TabletOskExtension extends Extension {
             getHandle: () => this._keyboard.handle,
             getKeyboardActor: () => this._container,
             physicalKeyboard: this._physical,
+            modalBridge: this._modalBridge,
         });
 
         this._indicator = new PanelIndicator({
@@ -116,6 +125,15 @@ export default class TabletOskExtension extends Extension {
             'changed::mode', () => this._applyMode(),
             this);
         Main.layoutManager.connectObject('monitors-changed', () => this._relayout(), this);
+        // The extension stays enabled on the unlock screen (session-modes) so the password
+        // can be typed there. Hide when the screen locks; the password entry of the
+        // unlock prompt shows it again (auto-show).
+        Main.sessionMode.connectObject('updated', () => {
+            if (Main.sessionMode.isLocked && this._visible) {
+                this._hide();
+                this._visibility?.notifyVisibleChanged();
+            }
+        }, this);
 
         this._applyMode();
     }
@@ -123,6 +141,7 @@ export default class TabletOskExtension extends Extension {
     disable() {
         this._settings?.disconnectObject(this);
         Main.layoutManager.disconnectObject(this);
+        Main.sessionMode.disconnectObject(this);
         if (this._relayoutId) {
             GLib.source_remove(this._relayoutId);
             this._relayoutId = 0;
@@ -131,6 +150,8 @@ export default class TabletOskExtension extends Extension {
         this._predict?.destroy();
         this._predict = null;
         this._visibility?.destroy();
+        this._modalBridge?.destroy();
+        this._modalBridge = null;
         this._indicator?.destroy();
         this._physical?.destroy();
         this._floating?.destroy();
@@ -425,7 +446,9 @@ export default class TabletOskExtension extends Extension {
         }
 
         c.translation_y = c.height;
-        this._dockMover.moveAway();
+        // The dock extension is disabled on the lock screen; leave its settings alone.
+        if (!Main.sessionMode.isLocked)
+            this._dockMover.moveAway();
         c.show();
         this._raise();
         this._workArea.setShown(true);

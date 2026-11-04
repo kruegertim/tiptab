@@ -272,7 +272,8 @@ class DragRecognizer {
 }
 
 export class VisibilityController {
-    constructor({settings, show, hide, isVisible, getHandle, getKeyboardActor, physicalKeyboard}) {
+    constructor({settings, show, hide, isVisible, getHandle, getKeyboardActor, physicalKeyboard,
+        modalBridge = null}) {
         this._submitTag = {};
         this._submitId = 0;
         this._settings = settings;
@@ -282,6 +283,7 @@ export class VisibilityController {
         this._getHandle = getHandle;
         this._getKeyboardActor = getKeyboardActor;
         this._physicalKeyboard = physicalKeyboard;
+        this._modalBridge = modalBridge;
 
         this._mode = null;          // null | 'auto' | 'manual'
         this._imeWants = false;
@@ -336,6 +338,12 @@ export class VisibilityController {
             onTrigger: () => this.manualShow(),
         });
         this._stripDrag.attach(this._strip);
+        // While a modal dialog grabs the input, the stage swipe action and the strip get
+        // no events; the bridge forwards them (strip) or asks us (touch edge swipe).
+        this._modalEdge = null;
+        this._modalEdgeHandler = event => this._onModalEdgeEvent(event);
+        this._modalBridge?.addRoot(this._strip);
+        this._modalBridge?.addHandler(this._modalEdgeHandler);
         Main.layoutManager.connectObject('monitors-changed',
             () => this._positionStrip(), this);
         this._positionStrip();
@@ -350,6 +358,35 @@ export class VisibilityController {
 
         this.rebindHandle();
         this._syncVisibleState();
+    }
+
+    // Touch swipe up from the bottom edge while a modal dialog holds the grab
+    // (the stage gesture is cut off then). Not on the lock screen: there a swipe up
+    // reveals the password prompt, whose entry then auto-shows the keyboard anyway.
+    _onModalEdgeEvent(event) {
+        const T = Clutter.EventType;
+        const type = event.type();
+        const [x, y] = event.get_coords();
+        if (type === T.TOUCH_BEGIN) {
+            this._modalEdge = null;
+            if (!this._swipeEnabled() || this._safeIsVisible() || Main.sessionMode.isLocked)
+                return false;
+            const m = monitorRectAt(x, y);
+            if (y < m.y + m.height - TOUCH_EDGE)
+                return false;
+            this._modalEdge = {y0: y, done: false};
+            return true;
+        }
+        const st = this._modalEdge;
+        if (!st)
+            return false;
+        if (type === T.TOUCH_UPDATE && !st.done && st.y0 - y > TOUCH_DISTANCE) {
+            st.done = true;
+            this.manualShow();
+        } else if (type === T.TOUCH_END || type === T.TOUCH_CANCEL) {
+            this._modalEdge = null;
+        }
+        return true;
     }
 
     // ---- public API (beyond the contract; coordinator should use these) ----
@@ -707,6 +744,10 @@ export class VisibilityController {
 
         this._stripDrag?.destroy();
         this._stripDrag = null;
+        this._modalBridge?.removeHandler(this._modalEdgeHandler);
+        if (this._strip)
+            this._modalBridge?.removeRoot(this._strip);
+        this._modalBridge = null;
         if (this._strip) {
             Main.layoutManager.removeChrome(this._strip);
             this._strip.destroy();
