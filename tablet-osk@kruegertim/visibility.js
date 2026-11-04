@@ -4,8 +4,7 @@
 // Rules:
 //  - "Text focus" = Main.inputMethod 'input-panel-state' ON (Wayland text-input / IBus
 //    clients; for clients that never request the panel, e.g. Chrome, the first
-//    text-input activity after a focus-out)
-//    clients) or an editable Clutter.Text holding the stage key focus (shell entries).
+//    text-input activity after a focus-out) or an editable Clutter.Text holding the stage key focus (shell entries).
 //    Main.inputMethod has no focus-in/focus-out signals in GNOME 46 (only commit,
 //    cursor-location-changed, delete-surrounding, input-panel-state, request-surrounding,
 //    surrounding-text-set), so input-panel-state is the app-side trigger; the shell's
