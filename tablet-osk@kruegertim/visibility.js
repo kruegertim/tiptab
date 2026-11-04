@@ -609,6 +609,10 @@ export class VisibilityController {
     }
 
     _onPanelState(state) {
+        // One line per app text-field focus change, so "no auto-show in app X" can be
+        // told apart from "app X never reports its fields" in the journal.
+        console.log(`${LOG_PREFIX} input-panel-state ${state} (auto allowed: ${this._autoAllowed()}, ` +
+            `purpose ${Main.inputMethod.content_purpose ?? '?'})`);
         switch (state) {
         case Clutter.InputPanelState.ON:
             this._imeWants = true;
