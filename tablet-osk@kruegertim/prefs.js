@@ -257,6 +257,11 @@ export default class TabletOskPreferences extends ExtensionPreferences {
         const modGroup = new Adw.PreferencesGroup({title: 'Sondertasten'});
         page.add(modGroup);
 
+        modGroup.add(comboRow(window, settings, 'letter-case', 'Großbuchstaben auf den Tasten', [
+            ['upper', 'Immer groß'],
+            ['shift', 'Nur mit Shift'],
+        ], 'Klein, solange Shift bzw. Feststelltaste nicht aktiv ist'));
+
         modGroup.add(comboRow(window, settings, 'super-symbol', 'Symbol der Super-Taste', [
             ['fish', 'Fisch'],
             ['tux', 'Tux'],

@@ -164,6 +164,7 @@ export const SettingsPanel = GObject.registerClass({
             'changed::suggestion-bar-position',
             () => this._barPosSeg.setActive(this._settings.get_string('suggestion-bar-position')),
             'changed::super-symbol', () => this._superSeg.setActive(this._settings.get_string('super-symbol')),
+            'changed::letter-case', () => this._caseSeg.setActive(this._settings.get_string('letter-case')),
             'changed::modifier-hold-release', () => this._syncHoldRelease(),
             'changed::modifier-hold-ms', () => this._syncHoldMs(),
             'changed::suggestions', () => this._syncSwitch(this._suggestSwitch, 'suggestions'),
@@ -377,6 +378,14 @@ export const SettingsPanel = GObject.registerClass({
             r.glowWidth = row;
         }
 
+        // Beschriftung der Buchstabentasten
+        {
+            const seg = this._segmented([['upper', 'Immer groß'], ['shift', 'Nur mit Shift']],
+                id => this._settings.set_string('letter-case', id), {minRows: 1.6});
+            this._caseSeg = seg;
+            r.letterCase = this._row('Großbuchstaben', seg.actor);
+        }
+
         // Symbol der Super-Taste
         {
             const seg = this._segmented([['fish', 'Fisch'], ['tux', 'Tux'], ['diamond', 'Raute'], ['text', 'Super']],
@@ -448,10 +457,10 @@ export const SettingsPanel = GObject.registerClass({
         this._rows = r;
         // single-column order (contract order) and two-column order (left | right)
         this._order1 = [r.keyHeight, r.aspect, r.mode, r.fRow, r.layout, r.shrink, r.auto, r.submit, r.dock, r.opacity,
-            r.brightness, r.glow, r.glowWidth, r.superSym, r.holdRelease, r.holdMs,
+            r.brightness, r.glow, r.glowWidth, r.letterCase, r.superSym, r.holdRelease, r.holdMs,
             r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict];
         this._order2 = [
-            [r.keyHeight, r.aspect, r.layout, r.fRow, r.brightness, r.glow, r.glowWidth, r.auto, r.submit, r.superSym, r.holdRelease,
+            [r.keyHeight, r.aspect, r.layout, r.fRow, r.brightness, r.glow, r.glowWidth, r.letterCase, r.auto, r.submit, r.superSym, r.holdRelease,
                 r.holdMs],
             [r.mode, r.shrink, r.opacity, r.dock,
                 r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict],
@@ -929,6 +938,7 @@ export const SettingsPanel = GObject.registerClass({
         this._syncGlow();
         this._syncGlowWidth();
         this._superSeg.setActive(this._settings.get_string('super-symbol'));
+        this._caseSeg.setActive(this._settings.get_string('letter-case'));
         this._barPosSeg.setActive(this._settings.get_string('suggestion-bar-position'));
         this._syncHoldRelease();
         this._syncHoldMs();

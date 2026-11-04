@@ -102,6 +102,14 @@
       <default>0.8</default>
       <summary>Brightness of the key labels (0.65–1.0; 1.0 = near white)</summary>
     </key>
+    <key name="letter-case" type="s">
+      <choices>
+        <choice value="upper"/>
+        <choice value="shift"/>
+      </choices>
+      <default>'upper'</default>
+      <summary>Letter key labels: always upper case, or lower case unless Shift/Caps is active</summary>
+    </key>
     <key name="key-glow" type="d">
       <range min="0.0" max="1.0"/>
       <default>0.5</default>

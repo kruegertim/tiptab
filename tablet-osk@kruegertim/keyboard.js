@@ -396,9 +396,16 @@ class OskKey extends St.Widget {
 
     // Highlight the glyph that the next tap produces; dim the others while
     // Shift or AltGr is active.
-    setLevel(shiftOn, altgrOn) {
+    // upperOn: the next letter would be upper case (Shift xor Caps). With the
+    // letter-case setting 'shift', letter labels follow it (lower case otherwise).
+    setLevel(shiftOn, altgrOn, upperOn = shiftOn) {
         if (!this._glyphs)
             return;
+        if (this.def.letter && this._main) {
+            const text = this._keyboard.lowercaseLabels && !upperOn ? this.def.char : this.def.label;
+            if (this._main.text !== text)
+                this._main.text = text;
+        }
         const {base, shift, altgr} = this._glyphs;
         let active = base;
         if (altgrOn && altgr)
@@ -588,6 +595,7 @@ export const OskKeyboard = GObject.registerClass({
             'changed::layout', () => this._rebuild(),
             'changed::show-f-row', () => this._rebuild(),
             'changed::label-brightness', () => this._applyContainerStyle(),
+            'changed::letter-case', () => this._updateModifierState(),
             'changed::key-glow', () => this._applyKeyStyles(),
             'changed::key-glow-width', () => this._applyKeyStyles(),
             'changed::suggestions', () => this._syncBarVisible(),
@@ -647,6 +655,12 @@ export const OskKeyboard = GObject.registerClass({
 
     get keyGlow() {
         return this._hasKey('key-glow') ? this._settings.get_double('key-glow') : 0;
+    }
+
+    // Letter labels: 'upper' = always capitals (ThinkPad keycaps), 'shift' = lower
+    // case unless Shift/Caps is active.
+    get lowercaseLabels() {
+        return this._hasKey('letter-case') && this._settings.get_string('letter-case') === 'shift';
     }
 
     get keyGlowWidth() {
@@ -1543,8 +1557,9 @@ export const OskKeyboard = GObject.registerClass({
             this.remove_style_class_name('tosk-fn-on');
         const shiftOn = this._shift > 0 || this._held.has('shift');
         const altgrOn = this._latched.has('altgr') || this._held.has('altgr');
+        const upperOn = shiftOn !== this._caps;
         for (const k of this._keys)
-            k.setLevel(shiftOn, altgrOn);
+            k.setLevel(shiftOn, altgrOn, upperOn);
     }
 
     _shortcutModifiers() {
