@@ -13,7 +13,15 @@ const OPACITY_MIN = 0.3;
 const OPACITY_MAX = 1.0;
 const KEY_HEIGHT_DEBOUNCE_MS = 150;
 const OPACITY_THROTTLE_MS = 60;
+const BRIGHTNESS_MIN = 0.65;
+const BRIGHTNESS_MAX = 1.0;
 const MIN_ROW_MM = 9;
+const HOLD_MIN_MS = 300;
+const HOLD_MAX_MS = 2000;
+const TOUCH_SCROLL_SLOP_PX = 12; // vertical finger travel before the panel scrolls
+const HOLD_STEP_MS = 100;
+const HOLD_DEBOUNCE_MS = 150;
+const CLEAR_CONFIRM_MS = 3000;
 const MIN_ROW_PX = 48;
 
 function formatMm(mm) {
@@ -22,6 +30,15 @@ function formatMm(mm) {
 
 function formatPercent(v) {
     return `${Math.round(v * 100)} %`;
+}
+
+function formatSeconds(ms) {
+    return `${(ms / 1000).toFixed(1).replace('.', ',')} s`;
+}
+
+function snapHoldMs(ms) {
+    const v = Math.round(ms / HOLD_STEP_MS) * HOLD_STEP_MS;
+    return Math.min(HOLD_MAX_MS, Math.max(HOLD_MIN_MS, v));
 }
 
 function snapKeyHeight(mm) {
@@ -96,21 +113,32 @@ export const SettingsPanel = GObject.registerClass({
         this._reflowId = 0;
 
         this._khWriter = new DelayedWriter(KEY_HEIGHT_DEBOUNCE_MS,
-            mm => this._settings.set_double('key-height-mm', mm));
+            mm => this._settings.set_double(this._khKey(), mm));
         this._opWriter = new DelayedWriter(OPACITY_THROTTLE_MS,
             v => this._settings.set_double('floating-opacity', v), {throttle: true});
+        this._brWriter = new DelayedWriter(OPACITY_THROTTLE_MS,
+            v => this._settings.set_double('label-brightness', v), {throttle: true});
+        this._holdWriter = new DelayedWriter(HOLD_DEBOUNCE_MS,
+            ms => this._settings.set_int('modifier-hold-ms', ms));
+        this._clearConfirmId = 0;
 
         this._scale(this, m => `font-size: ${m.font}px; padding: ${m.gap}px; spacing: ${m.gap}px;`);
 
         this._buildHeader();
         this._buildRows();
 
-        // Swallow presses on the background so they never reach the keys underneath.
-        for (const sig of ['button-press-event', 'button-release-event', 'touch-event'])
-            this.connect(sig, () => Clutter.EVENT_STOP);
+        // Swallow presses on the panel background so they never reach the chrome below.
+        // Only events whose source is the panel itself: on GNOME 49+ St.Button/Slider use
+        // Clutter.ClickGesture, which is cancelled when an ancestor stops the bubbling
+        // events of its sequence (taps on buttons would never emit 'clicked').
+        for (const sig of ['button-press-event', 'button-release-event', 'touch-event']) {
+            this.connect(sig, (_a, event) => global.stage.get_event_actor(event) === this
+                ? Clutter.EVENT_STOP : Clutter.EVENT_PROPAGATE);
+        }
 
         this._settings.connectObject(
             'changed::key-height-mm', () => this._syncKeyHeight(),
+            'changed::thumb-key-height-mm', () => this._syncKeyHeight(),
             'changed::mode', () => this._syncMode(),
             'changed::show-f-row', () => this._syncSwitch(this._fRowSwitch, 'show-f-row'),
             'changed::layout', () => this._syncLayout(),
@@ -118,7 +146,18 @@ export const SettingsPanel = GObject.registerClass({
             'changed::auto-show', () => this._syncSwitch(this._autoSwitch, 'auto-show'),
             'changed::hide-after-submit', () => this._syncSwitch(this._submitSwitch, 'hide-after-submit'),
             'changed::move-dock-left', () => this._syncSwitch(this._dockSwitch, 'move-dock-left'),
+            'changed::keep-key-aspect', () => this._syncSwitch(this._aspectSwitch, 'keep-key-aspect'),
             'changed::floating-opacity', () => this._syncOpacity(),
+            'changed::label-brightness', () => this._syncBrightness(),
+            'changed::suggestion-bar-position',
+            () => this._barPosSeg.setActive(this._settings.get_string('suggestion-bar-position')),
+            'changed::super-symbol', () => this._superSeg.setActive(this._settings.get_string('super-symbol')),
+            'changed::modifier-hold-release', () => this._syncHoldRelease(),
+            'changed::modifier-hold-ms', () => this._syncHoldMs(),
+            'changed::suggestions', () => this._syncSwitch(this._suggestSwitch, 'suggestions'),
+            'changed::autocorrect', () => this._syncSwitch(this._autocorrectSwitch, 'autocorrect'),
+            'changed::dynamic-hitareas', () => this._syncSwitch(this._hitSwitch, 'dynamic-hitareas'),
+            'changed::prediction-language', () => this._langSeg.setActive(this._settings.get_string('prediction-language')),
             this);
 
         this.connect('notify::mapped', () => {
@@ -228,7 +267,7 @@ export const SettingsPanel = GObject.registerClass({
 
         // Modus
         {
-            const seg = this._segmented([['docked', 'Angedockt'], ['floating', 'Schwebend']],
+            const seg = this._segmented([['docked', 'Angedockt'], ['floating', 'Schwebend'], ['thumb', 'Daumen']],
                 id => this._settings.set_string('mode', id));
             this._modeSeg = seg;
             r.mode = this._row('Modus', seg.actor);
@@ -262,6 +301,10 @@ export const SettingsPanel = GObject.registerClass({
         this._dockSwitch = this._switch('move-dock-left');
         r.dock = this._row('Dock nach links verschieben', this._dockSwitch);
 
+        // Proportionen beibehalten (unter 13 mm schmalere Tastatur statt flacherer Tasten)
+        this._aspectSwitch = this._switch('keep-key-aspect');
+        r.aspect = this._row('Proportionen beibehalten', this._aspectSwitch);
+
         // Deckkraft
         {
             const {row, valueLabel, slider} = this._sliderRow('Deckkraft', null);
@@ -277,10 +320,100 @@ export const SettingsPanel = GObject.registerClass({
             r.opacity = row;
         }
 
+        // Helligkeit der Beschriftung
+        {
+            const {row, valueLabel, slider} = this._sliderRow('Helligkeit der Beschriftung', null);
+            this._brLabel = valueLabel;
+            this._brSlider = slider;
+            slider.connect('drag-end', () => this._brWriter.flush());
+            slider.connect('notify::value', () => {
+                const v = this._brValue();
+                this._brLabel.text = formatPercent(v);
+                if (!this._syncing)
+                    this._brWriter.schedule(v);
+            });
+            r.brightness = row;
+        }
+
+        // Symbol der Super-Taste
+        {
+            const seg = this._segmented([['fish', 'Fisch'], ['tux', 'Tux'], ['diamond', 'Raute'], ['text', 'Super']],
+                id => this._settings.set_string('super-symbol', id), {minRows: 1.6});
+            this._superSeg = seg;
+            r.superSym = this._row('Super-Taste', seg.actor);
+        }
+
+        // Gehaltene Umschalttasten beim Loslassen lösen
+        this._holdSwitch = this._switch('modifier-hold-release');
+        r.holdRelease = this._row('Gehaltene Umschalttasten lösen', this._holdSwitch);
+
+        // Haltedauer
+        {
+            const {row, valueLabel, slider} = this._sliderRow('Haltedauer', null);
+            this._holdLabel = valueLabel;
+            this._holdSlider = slider;
+            slider.connect('drag-end', () => this._holdWriter.flush());
+            slider.connect('notify::value', () => {
+                const ms = this._holdValue();
+                this._holdLabel.text = formatSeconds(ms);
+                if (!this._syncing)
+                    this._holdWriter.schedule(ms);
+            });
+            r.holdMs = row;
+        }
+
+        // --- Vorhersage ---
+        r.predictHeader = this._sectionLabel('Vorhersage');
+
+        this._suggestSwitch = this._switch('suggestions');
+        r.suggest = this._row('Vorschläge', this._suggestSwitch);
+
+        {
+            const seg = this._segmented([['top', 'Oben'], ['bottom', 'Unten']],
+                id => this._settings.set_string('suggestion-bar-position', id), {minRows: 1.6});
+            this._barPosSeg = seg;
+            r.barPos = this._row('Position der Vorschlagsleiste', seg.actor);
+        }
+
+        this._autocorrectSwitch = this._switch('autocorrect');
+        r.autocorrect = this._row('Autokorrektur', this._autocorrectSwitch);
+
+        this._hitSwitch = this._switch('dynamic-hitareas');
+        r.hitareas = this._row('Dynamische Trefferflächen', this._hitSwitch);
+
+        {
+            const seg = this._segmented([['auto', 'Auto'], ['de', 'Deutsch'], ['en', 'Englisch']],
+                id => this._settings.set_string('prediction-language', id), {minRows: 1.6});
+            this._langSeg = seg;
+            r.language = this._row('Sprache', seg.actor);
+        }
+
+        {
+            const b = new St.Button({
+                label: 'Löschen',
+                style_class: 'tosk-settings-step',
+                can_focus: false,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            this._scale(b, m =>
+                `min-height: ${Math.round(m.row * 0.72)}px; min-width: ${Math.round(m.row * 2.6)}px; ` +
+                `padding: 0 ${m.pad}px; border-radius: ${m.radius}px;`);
+            b.connect('clicked', () => this._onClearClicked());
+            this._clearButton = b;
+            r.clearDict = this._row('Gelerntes Wörterbuch löschen', b);
+        }
+
         this._rows = r;
         // single-column order (contract order) and two-column order (left | right)
-        this._order1 = [r.keyHeight, r.mode, r.fRow, r.layout, r.shrink, r.auto, r.submit, r.dock, r.opacity];
-        this._order2 = [[r.keyHeight, r.layout, r.fRow, r.auto, r.submit], [r.mode, r.shrink, r.opacity, r.dock]];
+        this._order1 = [r.keyHeight, r.aspect, r.mode, r.fRow, r.layout, r.shrink, r.auto, r.submit, r.dock, r.opacity,
+            r.brightness, r.superSym, r.holdRelease, r.holdMs,
+            r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict];
+        this._order2 = [
+            [r.keyHeight, r.aspect, r.layout, r.fRow, r.brightness, r.auto, r.submit, r.superSym, r.holdRelease,
+                r.holdMs],
+            [r.mode, r.shrink, r.opacity, r.dock,
+                r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict],
+        ];
 
         this._colA = new St.BoxLayout({vertical: true, x_expand: true, style_class: 'tosk-settings-column'});
         this._colB = new St.BoxLayout({vertical: true, x_expand: true, style_class: 'tosk-settings-column'});
@@ -303,6 +436,63 @@ export const SettingsPanel = GObject.registerClass({
             child: columns,
         });
         this.add_child(this._scrollView);
+        this._enableTouchScroll(this._scrollView);
+    }
+
+    // St.ScrollView has no touch panning in GNOME Shell: without this, rows below the
+    // fold are unreachable on a touchscreen. A vertical drag (one finger) scrolls; the
+    // control under the finger is released once the drag starts.
+    _enableTouchScroll(view) {
+        const T = Clutter.EventType;
+        let slot = null, y0 = 0, v0 = 0, dragging = false, pressed = null;
+        view.connect('captured-event', (_a, event) => {
+            const type = event.type();
+            if (type !== T.TOUCH_BEGIN && type !== T.TOUCH_UPDATE &&
+                type !== T.TOUCH_END && type !== T.TOUCH_CANCEL)
+                return Clutter.EVENT_PROPAGATE;
+            const evSlot = event.get_event_sequence()?.get_slot() ?? -1;
+            const [, y] = event.get_coords();
+            const adj = view.vadjustment;
+
+            if (type === T.TOUCH_BEGIN) {
+                if (slot === null) {
+                    slot = evSlot;
+                    y0 = y;
+                    v0 = adj.value;
+                    dragging = false;
+                    pressed = null;
+                    for (let a = global.stage.get_event_actor(event); a && a !== view; a = a.get_parent()) {
+                        if (a instanceof St.Button) {
+                            pressed = a;
+                            break;
+                        }
+                    }
+                }
+                return Clutter.EVENT_PROPAGATE;
+            }
+            if (evSlot !== slot)
+                return Clutter.EVENT_PROPAGATE;
+
+            if (type === T.TOUCH_UPDATE) {
+                if (!dragging && Math.abs(y - y0) > TOUCH_SCROLL_SLOP_PX &&
+                    adj.upper - adj.page_size > 0) {
+                    dragging = true;
+                    pressed?.fake_release?.();
+                }
+                if (!dragging)
+                    return Clutter.EVENT_PROPAGATE;
+                adj.value = Math.max(adj.lower,
+                    Math.min(adj.upper - adj.page_size, v0 - (y - y0)));
+                return Clutter.EVENT_STOP;
+            }
+
+            // TOUCH_END / TOUCH_CANCEL
+            const wasDragging = dragging;
+            slot = null;
+            dragging = false;
+            pressed = null;
+            return wasDragging ? Clutter.EVENT_STOP : Clutter.EVENT_PROPAGATE;
+        });
     }
 
     _row(title, control) {
@@ -322,6 +512,59 @@ export const SettingsPanel = GObject.registerClass({
         control.y_align = Clutter.ActorAlign.CENTER;
         row.add_child(control);
         return row;
+    }
+
+    _sectionLabel(text) {
+        const label = new St.Label({
+            text,
+            style_class: 'tosk-settings-title',
+            x_expand: true,
+            y_align: Clutter.ActorAlign.END,
+        });
+        this._scale(label, m => `padding: ${Math.round(m.gap * 1.5)}px ${m.pad}px 0 ${m.pad}px;`);
+        return label;
+    }
+
+    _onClearClicked() {
+        const b = this._clearButton;
+        if (this._clearDone)
+            return; // 'Gelöscht' feedback phase
+        if (!this._clearConfirmId) {
+            // first tap: ask for confirmation for 3 s
+            b.label = 'Wirklich löschen?';
+            b.remove_style_class_name('tosk-settings-step');
+            b.add_style_class_name('tosk-settings-done');
+            this._clearConfirmId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, CLEAR_CONFIRM_MS, () => {
+                this._clearConfirmId = 0;
+                this._resetClearButton();
+                return GLib.SOURCE_REMOVE;
+            });
+            return;
+        }
+        GLib.source_remove(this._clearConfirmId);
+        this._clearConfirmId = 0;
+        const s = this._settings;
+        s.set_int('clear-userdict-request', (s.get_int('clear-userdict-request') + 1) % 1000000);
+        b.label = 'Gelöscht';
+        b.remove_style_class_name('tosk-settings-done');
+        b.add_style_class_name('tosk-settings-step');
+        this._clearConfirmId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, () => {
+            this._clearConfirmId = 0;
+            this._resetClearButton();
+            return GLib.SOURCE_REMOVE;
+        });
+        // the 'Gelöscht' phase must not count as the confirm state
+        this._clearDone = true;
+    }
+
+    _resetClearButton() {
+        this._clearDone = false;
+        const b = this._clearButton;
+        if (!b)
+            return;
+        b.label = 'Löschen';
+        b.remove_style_class_name('tosk-settings-done');
+        b.add_style_class_name('tosk-settings-step');
     }
 
     _sliderRow(title, steps) {
@@ -414,7 +657,7 @@ export const SettingsPanel = GObject.registerClass({
         return sw;
     }
 
-    _segmented(items, onSelect) {
+    _segmented(items, onSelect, {minRows = 2.1} = {}) {
         const box = new St.BoxLayout({style_class: 'tosk-settings-segmented'});
         const buttons = new Map();
         items.forEach(([id, label], i) => {
@@ -432,7 +675,7 @@ export const SettingsPanel = GObject.registerClass({
                 const r = m.radius;
                 const left = i === 0 ? r : 0;
                 const right = i === items.length - 1 ? r : 0;
-                return `min-height: ${Math.round(m.row * 0.72)}px; min-width: ${Math.round(m.row * 2.1)}px; ` +
+                return `min-height: ${Math.round(m.row * 0.72)}px; min-width: ${Math.round(m.row * minRows)}px; ` +
                     `padding: 0 ${m.gap}px; border-radius: ${left}px ${right}px ${right}px ${left}px;`;
             });
             b.connect('clicked', () => {
@@ -500,9 +743,32 @@ export const SettingsPanel = GObject.registerClass({
         return snapKeyHeight(KEY_HEIGHT_MIN + this._khSlider.value * (KEY_HEIGHT_MAX - KEY_HEIGHT_MIN));
     }
 
+    _brValue() {
+        const v = BRIGHTNESS_MIN + this._brSlider.value * (BRIGHTNESS_MAX - BRIGHTNESS_MIN);
+        return Math.round(v * 100) / 100;
+    }
+
     _opValue() {
         const v = OPACITY_MIN + this._opSlider.value * (OPACITY_MAX - OPACITY_MIN);
         return Math.round(v * 100) / 100;
+    }
+
+    _holdValue() {
+        return snapHoldMs(HOLD_MIN_MS + this._holdSlider.value * (HOLD_MAX_MS - HOLD_MIN_MS));
+    }
+
+    _syncHoldMs() {
+        const ms = this._settings.get_int('modifier-hold-ms');
+        this._withSync(() => {
+            this._holdSlider.value = (ms - HOLD_MIN_MS) / (HOLD_MAX_MS - HOLD_MIN_MS);
+        });
+        this._holdLabel.text = formatSeconds(snapHoldMs(ms));
+    }
+
+    _syncHoldRelease() {
+        this._syncSwitch(this._holdSwitch, 'modifier-hold-release');
+        this._setRowSensitive(this._rows.holdMs, this._holdSlider,
+            this._settings.get_boolean('modifier-hold-release'));
     }
 
     _stepKeyHeight(delta) {
@@ -521,14 +787,27 @@ export const SettingsPanel = GObject.registerClass({
         }
     }
 
+    // The key height slider edits the active mode's value (thumb mode has its own).
+    _khKey() {
+        return this._settings.get_string('mode') === 'thumb' ? 'thumb-key-height-mm' : 'key-height-mm';
+    }
+
     _syncKeyHeight() {
         if (this._khDragging)
             return;
-        const mm = this._settings.get_double('key-height-mm');
+        const mm = this._settings.get_double(this._khKey());
         this._withSync(() => {
             this._khSlider.value = (mm - KEY_HEIGHT_MIN) / (KEY_HEIGHT_MAX - KEY_HEIGHT_MIN);
         });
         this._khLabel.text = formatMm(snapKeyHeight(mm));
+    }
+
+    _syncBrightness() {
+        const v = this._settings.get_double('label-brightness');
+        this._withSync(() => {
+            this._brSlider.value = (v - BRIGHTNESS_MIN) / (BRIGHTNESS_MAX - BRIGHTNESS_MIN);
+        });
+        this._brLabel.text = formatPercent(v);
     }
 
     _syncOpacity() {
@@ -552,8 +831,10 @@ export const SettingsPanel = GObject.registerClass({
     }
 
     _syncMode() {
-        const floating = this._settings.get_string('mode') === 'floating';
-        this._modeSeg.setActive(floating ? 'floating' : 'docked');
+        const mode = this._settings.get_string('mode');
+        const floating = mode === 'floating';
+        this._modeSeg.setActive(mode);
+        this._syncKeyHeight();
         this._setRowSensitive(this._rows.shrink, this._shrinkSwitch, !floating);
         this._setRowSensitive(this._rows.opacity, this._opSlider, floating);
     }
@@ -576,18 +857,37 @@ export const SettingsPanel = GObject.registerClass({
         this._syncSwitch(this._autoSwitch, 'auto-show');
         this._syncSwitch(this._submitSwitch, 'hide-after-submit');
         this._syncSwitch(this._dockSwitch, 'move-dock-left');
+        this._syncSwitch(this._aspectSwitch, 'keep-key-aspect');
         this._syncOpacity();
+        this._syncBrightness();
+        this._superSeg.setActive(this._settings.get_string('super-symbol'));
+        this._barPosSeg.setActive(this._settings.get_string('suggestion-bar-position'));
+        this._syncHoldRelease();
+        this._syncHoldMs();
+        this._syncSwitch(this._suggestSwitch, 'suggestions');
+        this._syncSwitch(this._autocorrectSwitch, 'autocorrect');
+        this._syncSwitch(this._hitSwitch, 'dynamic-hitareas');
+        this._langSeg.setActive(this._settings.get_string('prediction-language'));
     }
 
     _flushWrites() {
         this._khWriter.flush();
         this._opWriter.flush();
+        this._brWriter.flush();
+        this._holdWriter.flush();
     }
 
     _onDestroy() {
         this._flushWrites();
         this._khWriter.cancel();
         this._opWriter.cancel();
+        this._brWriter.cancel();
+        this._holdWriter.cancel();
+        if (this._clearConfirmId) {
+            GLib.source_remove(this._clearConfirmId);
+            this._clearConfirmId = 0;
+        }
+        this._clearButton = null;
         if (this._reflowId) {
             GLib.source_remove(this._reflowId);
             this._reflowId = 0;

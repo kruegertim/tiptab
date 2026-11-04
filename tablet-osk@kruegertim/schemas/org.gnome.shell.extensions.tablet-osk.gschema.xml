@@ -7,6 +7,22 @@
   <enum id="org.gnome.shell.extensions.tablet-osk.Mode">
     <value nick="docked" value="0"/>
     <value nick="floating" value="1"/>
+    <value nick="thumb" value="2"/>
+  </enum>
+  <enum id="org.gnome.shell.extensions.tablet-osk.PredictionLanguage">
+    <value nick="auto" value="0"/>
+    <value nick="de" value="1"/>
+    <value nick="en" value="2"/>
+  </enum>
+  <enum id="org.gnome.shell.extensions.tablet-osk.BarPosition">
+    <value nick="top" value="0"/>
+    <value nick="bottom" value="1"/>
+  </enum>
+  <enum id="org.gnome.shell.extensions.tablet-osk.SuperSymbol">
+    <value nick="fish" value="0"/>
+    <value nick="diamond" value="1"/>
+    <value nick="text" value="2"/>
+    <value nick="tux" value="3"/>
   </enum>
   <schema id="org.gnome.shell.extensions.tablet-osk" path="/org/gnome/shell/extensions/tablet-osk/">
     <key name="layout" enum="org.gnome.shell.extensions.tablet-osk.Layout">
@@ -68,6 +84,24 @@
       <default>1.0</default>
       <summary>Opacity of the keyboard in floating mode (0.3–1.0)</summary>
     </key>
+    <key name="suggestion-bar-position" enum="org.gnome.shell.extensions.tablet-osk.BarPosition">
+      <default>'top'</default>
+      <summary>Suggestion bar above (top) or below (bottom) the keys</summary>
+    </key>
+    <key name="thumb-key-height-mm" type="d">
+      <range min="7.0" max="20.0"/>
+      <default>11.0</default>
+      <summary>Key height in thumb mode (split keyboard), in mm</summary>
+    </key>
+    <key name="keep-key-aspect" type="b">
+      <default>true</default>
+      <summary>Below 13 mm key height keep the key proportions (narrower keyboard) instead of flatter keys</summary>
+    </key>
+    <key name="label-brightness" type="d">
+      <range min="0.65" max="1.0"/>
+      <default>0.8</default>
+      <summary>Brightness of the key labels (0.65–1.0; 1.0 = near white)</summary>
+    </key>
     <key name="floating-x" type="i">
       <default>-1</default>
       <summary>Floating panel x position (logical px, -1 = centred)</summary>
@@ -79,6 +113,39 @@
     <key name="floating-width" type="i">
       <default>-1</default>
       <summary>Floating panel width in logical px (-1 = 70% of monitor width); keys scale with it</summary>
+    </key>
+    <key name="suggestions" type="b">
+      <default>true</default>
+      <summary>Show word suggestions in the suggestion bar</summary>
+    </key>
+    <key name="autocorrect" type="b">
+      <default>true</default>
+      <summary>Correct the current word automatically on space/punctuation (BackSpace right after reverts)</summary>
+    </key>
+    <key name="dynamic-hitareas" type="b">
+      <default>true</default>
+      <summary>Enlarge the touch area of likely next letters (invisible, iOS-like)</summary>
+    </key>
+    <key name="prediction-language" enum="org.gnome.shell.extensions.tablet-osk.PredictionLanguage">
+      <default>'auto'</default>
+      <summary>Prediction language (auto: QWERTZ = German, QWERTY = English)</summary>
+    </key>
+    <key name="clear-userdict-request" type="i">
+      <default>0</default>
+      <summary>Incremented to request clearing the learned user dictionary (value itself is meaningless)</summary>
+    </key>
+    <key name="super-symbol" enum="org.gnome.shell.extensions.tablet-osk.SuperSymbol">
+      <default>'fish'</default>
+      <summary>Label of the Super key: fish, diamond or the text "Super"</summary>
+    </key>
+    <key name="modifier-hold-release" type="b">
+      <default>true</default>
+      <summary>A modifier held down acts while held and is released on key-up after modifier-hold-ms</summary>
+    </key>
+    <key name="modifier-hold-ms" type="i">
+      <range min="300" max="2000"/>
+      <default>1000</default>
+      <summary>Hold duration in ms after which a held modifier is released on key-up</summary>
     </key>
   </schema>
 </schemalist>

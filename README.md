@@ -40,3 +40,5 @@ Aufbau der Module: siehe `CONTRACT.md`.
 ## Lizenz
 Code: GNU General Public License v3.0 (siehe `LICENSE`). Wörterbuchdaten (Branch `wip/next`, `predict/data/`): CC-BY-SA 4.0,
 Details in `tools/DATA_LICENSES.md`.
+
+Tux-Figur nach Larry Ewing (eigene, vereinfachte Zeichnung in `icons/tux-symbolic.svg`).

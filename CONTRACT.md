@@ -223,3 +223,55 @@ export function resolveTouch({x, y}, keys, probs, {sigmaX, sigmaY, enabled})
 ```
 Performance budget: every call above < 5 ms on this laptop (measure with node, report p50/p95);
 data file sizes small (target < 3 MB per language uncompressed, load < 150 ms).
+
+## Amendment 3 — keyboard.js UI rework + prediction controller
+
+### U (keyboard.js, stylesheet.css) — owner: UI agent
+1. **Docked mode: no handle bar.** The top row is now the **suggestion bar** (~8 mm, part of preferredHeight):
+   left = small gear button (emits 'settings-request'), then 3 equal suggestion slots (middle emphasised).
+   Floating mode keeps a grab bar above the suggestion bar (the `handle` getter returns it; in docked mode
+   `handle` returns null — VisibilityController/FloatingController already cope with null).
+2. **Swipe down anywhere hides** (docked + floating): normal keys fire on **release**, not press. Track each
+   pointer/touch sequence over the keyboard; if it moves down > 1 key height, |dy| > 2|dx| → cancel the pending
+   key (no output, cancel repeat) and emit `'swipe-hide'` (coordinator hides; optional: follow finger with
+   translation_y during the drag and snap back if cancelled). Key repeat (Backspace, arrows…) still starts after
+   500 ms hold; once repeat started, the key already produced output (that's fine). Modifiers toggle on release.
+   Horizontal moves within a key are ignored. A sequence that started on a key and is released on another key
+   still activates the start key (iOS behaviour) unless it became a swipe.
+3. **Keycap labels:** all bold; shift/AltGr glyphs same font size as the base glyph; multi-glyph keys use real
+   keycap arrangement: shift char top-left, base char bottom-left, AltGr char bottom-right; letter keys show a
+   single uppercase label (centre); keys with only base+shift: shift top-left, base bottom-left. Active level is
+   highlighted (inactive glyphs dimmed to ~45 % when Shift or AltGr is latched/locked; base dimmed when a level
+   is active). Glyph size scales with key size (fit check at 9 mm keys, compact and smallest floating width).
+4. **Prediction hooks** (used by predictController.js):
+   - `setSuggestions(slots)` — array of 3 `{text, kind}`|null (kind 'literal' → render in quotes);
+     emits `'suggestion-activated'(index:int)`.
+   - `setSuggestionsEnabled(bool)` — false → slots empty & non-reactive (password/terminal), gear stays.
+   - `setCharFilter(fn)` — fn(char:string) called synchronously right before a printable char (incl. ' ' and
+     punctuation) is output; may perform edits (autocorrect) first. Return value ignored.
+   - `setKeyResolver(fn|null)` — for char keys: fn({x, y}, candidates) → char|null, where candidates =
+     [{char, cx, cy, w, h}] (stage coords of all visible letter keys, lowercase base char). If it returns a char
+     different from the hit key, that key is activated instead (visual press feedback stays on the touched key).
+   - Emits `'text-typed'(str)` after printable output, `'key-sent'(keysymName)` for specials (already exists;
+     BackSpace must also emit it).
+   - Editing helpers: `deleteBackward(n)` (BackSpace taps, or Main.inputMethod.delete_surrounding when it has
+     IM focus) and `typeText(str)` (commit, no shift/caps applied, one-shot modifiers untouched).
+   - Shift auto-capitalisation is NOT required now.
+
+### P (predictController.js, settingsPanel.js, prefs.js, schema) — owner: prediction agent
+`export class PredictController { constructor({settings, keyboard, extensionPath}); destroy(); reset() }`
+Uses predict/engine.js, loader.js, touch.js, store.js (Amendment 2). Context = Main.inputMethod._surroundingText /
+_surroundingTextCursor when available (signal 'surrounding-text-set'), else an internal buffer of what the OSK
+typed; reset on focus change (stage notify::key-focus, input-panel-state ON) and on hide.
+Autocorrect on space/punctuation via charFilter (deleteBackward(word.length) + typeText(replacement)); immediate
+BackSpace after an autocorrect restores the original word (and calls engine.unlearn/blocks that correction);
+words typed & kept twice are learned. Suggestion tap: replace current partial word with the suggestion + ' '.
+After space: next-word predictions. Disabled entirely (no learning, no suggestions) when
+Main.inputMethod.content_purpose is PASSWORD, PIN or TERMINAL, or hints contain HIDDEN_TEXT/SENSITIVE_DATA.
+Dynamic hit areas via setKeyResolver + touch.resolveTouch with nextKeyProbs(prefix).
+New schema keys: `suggestions` b true, `autocorrect` b true, `dynamic-hitareas` b true,
+`prediction-language` enum 'auto'|'de'|'en' (auto: qwertz→de, qwerty→en). Settings rows in settingsPanel.js
+(gear panel) and prefs.js: "Vorschläge", "Autokorrektur", "Dynamische Trefferflächen", "Sprache"
+(Automatisch/Deutsch/Englisch), button "Gelerntes Wörterbuch löschen" (calls a GSettings-free path: write a
+`clear-userdict-request` counter key i, incremented by the button; the controller watches it and clears).
+Data loads lazily (first show) via GLib idle; never blocks a key press > 5 ms.

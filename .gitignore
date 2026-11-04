@@ -5,3 +5,4 @@ __pycache__/
 *.png
 !tablet-osk@kruegertim/icons/*.png
 tools/downloads/
+dist/

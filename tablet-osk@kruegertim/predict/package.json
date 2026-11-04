@@ -1,0 +1,1 @@
+{"type": "module", "private": true, "description": "Marks predict/*.js as ES modules for node unit tests; not used by GNOME Shell."}

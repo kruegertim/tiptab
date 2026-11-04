@@ -162,6 +162,8 @@ function _describe(device) {
         name: safe(() => device.get_device_name()) ?? '',
         type: safe(() => device.get_device_type()),
         capabilities: safe(() => device.get_capabilities()),
+        // get_device_mode()/Clutter.InputMode were removed in GNOME 49+ (mode is then null;
+        // the seat only lists physical devices there).
         mode: safe(() => device.get_device_mode()),
         vendorId: safe(() => device.get_vendor_id()),
         productId: safe(() => device.get_product_id()),
@@ -180,7 +182,7 @@ export class PhysicalKeyboardMonitor {
         this._onChanged = onChanged;
         this._external = new Set();
         this._listeners = new Set();
-        this._seat = Clutter.get_default_backend().get_default_seat();
+        this._seat = (global.stage.context?.get_backend?.() ?? Clutter.get_default_backend()).get_default_seat();
 
         console.log(`${LOG_PREFIX} input devices at startup:`);
         for (const device of this._seat.list_devices())

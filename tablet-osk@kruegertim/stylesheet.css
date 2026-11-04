@@ -4,9 +4,16 @@
 
 .tosk-keyboard {
     background-color: #262628;
-    font-family: "Liberation Sans", "Nimbus Sans", "Noto Sans", sans-serif;
-    font-weight: 500;
+    /* unquoted: St's CSS parser rejects a list of several quoted family names */
+    font-family: Liberation Sans, Nimbus Sans, Noto Sans, sans-serif;
+    font-weight: bold;
     color: #f5f5f5;
+}
+
+/* All keyboard text is bold. !important + higher specificity because some shell
+ * themes (Ubuntu Yaru) force "* { font-weight: normal !important; }". */
+.tosk-keyboard StLabel {
+    font-weight: bold !important;
 }
 
 .tosk-keyboard.tosk-floating {
@@ -14,7 +21,7 @@
     border: 1px solid rgba(255, 255, 255, 0.16);
 }
 
-/* ---- handle bar ---- */
+/* ---- grab bar (floating mode only) ---- */
 .tosk-handle {
     background-color: transparent;
 }
@@ -24,13 +31,46 @@
     border-radius: 3px;
 }
 
-.tosk-handle-button {
-    color: #b8b8bc;
+/* ---- suggestion bar: flat touch areas on the keyboard background ---- */
+.tosk-suggest-bar {
+    background-color: transparent;
+}
+
+/* Thumb mode: transparent middle; background only behind the two halves and the
+ * suggestion strip over the gap. */
+.tosk-keyboard.tosk-thumb {
+    background-color: transparent;
+}
+
+.tosk-thumb-half {
+    background-color: #262628;
+    border-radius: 14px 14px 0 0;
+}
+
+.tosk-keyboard.tosk-thumb .tosk-suggest-bar {
+    background-color: #262628;
+    border-radius: 10px;
+}
+
+
+.tosk-suggest-divider {
+    background-color: rgba(255, 255, 255, 0.22);
+}
+
+.tosk-suggest-slot {
     border-radius: 6px;
 }
 
-.tosk-handle-button:active {
-    background-color: #3c3c40;
+.tosk-suggest-slot:active {
+    background-color: #3a3a3c;
+}
+
+.tosk-suggest-label {
+    font-weight: bold;
+    color: #c4c4c8;
+}
+
+.tosk-suggest-main .tosk-suggest-label {
     color: #ffffff;
 }
 
@@ -46,9 +86,10 @@
 }
 
 /* ---- keys ---- */
+/* Key label colour is not set here: OskKeyboard sets it inline from the
+ * label-brightness setting and keys/labels/icons inherit it. */
 .tosk-key {
     background-color: #141414;
-    color: #f5f5f5;
     border-radius: 6px;
 }
 
@@ -73,27 +114,18 @@
     border-radius: 0 0 6px 6px;
 }
 
-.tosk-label-main {
-    color: #f5f5f5;
-}
 
-.tosk-label-small {
-    color: #e8e8e8;
-}
-
-.tosk-label-shift {
-    color: #d8d8da;
-}
-
-.tosk-label-altgr {
-    color: #9a9a9e;
+/* keycap glyphs (shift / base / AltGr), all the same size and colour;
+ * inactive levels are dimmed via opacity from keyboard.js */
+.tosk-glyph {
+    font-weight: bold;
 }
 
 /* Fn key text and every Fn-layer secondary label/icon: ThinkPad blue */
 .tosk-label-fn,
 .tosk-fn-icon,
 .tosk-key-fn .tosk-label-main {
-    color: #4a90d9;
+    color: #4282c4;
 }
 
 .tosk-fn-box {
@@ -102,7 +134,7 @@
 
 .tosk-fn-on .tosk-label-fn,
 .tosk-fn-on .tosk-fn-icon {
-    color: #7db4ef;
+    color: #6fa3dc;
 }
 
 .tosk-fn-on .tosk-label-fn {
