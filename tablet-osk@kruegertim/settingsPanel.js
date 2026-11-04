@@ -16,6 +16,8 @@ const OPACITY_THROTTLE_MS = 60;
 const BRIGHTNESS_MIN = 0.65;
 const BRIGHTNESS_MAX = 1.0;
 const MIN_ROW_MM = 9;
+const GLOW_W_MIN = 1;
+const GLOW_W_MAX = 6;
 const HOLD_MIN_MS = 300;
 const HOLD_MAX_MS = 2000;
 const TOUCH_SCROLL_SLOP_PX = 12; // vertical finger travel before the panel scrolls
@@ -124,6 +126,8 @@ export const SettingsPanel = GObject.registerClass({
             v => this._settings.set_double('label-brightness', v), {throttle: true});
         this._glowWriter = new DelayedWriter(OPACITY_THROTTLE_MS,
             v => this._settings.set_double('key-glow', v), {throttle: true});
+        this._glowWWriter = new DelayedWriter(OPACITY_THROTTLE_MS,
+            px => this._settings.set_int('key-glow-width', px), {throttle: true});
         this._holdWriter = new DelayedWriter(HOLD_DEBOUNCE_MS,
             ms => this._settings.set_int('modifier-hold-ms', ms));
         this._clearConfirmId = 0;
@@ -156,9 +160,11 @@ export const SettingsPanel = GObject.registerClass({
             'changed::floating-opacity', () => this._syncOpacity(),
             'changed::label-brightness', () => this._syncBrightness(),
             'changed::key-glow', () => this._syncGlow(),
+            'changed::key-glow-width', () => this._syncGlowWidth(),
             'changed::suggestion-bar-position',
             () => this._barPosSeg.setActive(this._settings.get_string('suggestion-bar-position')),
             'changed::super-symbol', () => this._superSeg.setActive(this._settings.get_string('super-symbol')),
+            'changed::letter-case', () => this._caseSeg.setActive(this._settings.get_string('letter-case')),
             'changed::modifier-hold-release', () => this._syncHoldRelease(),
             'changed::modifier-hold-ms', () => this._syncHoldMs(),
             'changed::suggestions', () => this._syncSwitch(this._suggestSwitch, 'suggestions'),
@@ -357,6 +363,29 @@ export const SettingsPanel = GObject.registerClass({
             r.glow = row;
         }
 
+        // Breite des Leuchtrands (px)
+        {
+            const {row, valueLabel, slider} = this._sliderRow('Breite des Leuchtrands', null);
+            this._glowWLabel = valueLabel;
+            this._glowWSlider = slider;
+            slider.connect('drag-end', () => this._glowWWriter.flush());
+            slider.connect('notify::value', () => {
+                const px = this._glowWidthValue();
+                this._glowWLabel.text = `${px} px`;
+                if (!this._syncing)
+                    this._glowWWriter.schedule(px);
+            });
+            r.glowWidth = row;
+        }
+
+        // Beschriftung der Buchstabentasten
+        {
+            const seg = this._segmented([['upper', 'Immer groß'], ['shift', 'Nur mit Shift']],
+                id => this._settings.set_string('letter-case', id), {minRows: 1.6});
+            this._caseSeg = seg;
+            r.letterCase = this._row('Großbuchstaben', seg.actor);
+        }
+
         // Symbol der Super-Taste
         {
             const seg = this._segmented([['fish', 'Fisch'], ['tux', 'Tux'], ['diamond', 'Raute'], ['text', 'Super']],
@@ -428,10 +457,10 @@ export const SettingsPanel = GObject.registerClass({
         this._rows = r;
         // single-column order (contract order) and two-column order (left | right)
         this._order1 = [r.keyHeight, r.aspect, r.mode, r.fRow, r.layout, r.shrink, r.auto, r.submit, r.dock, r.opacity,
-            r.brightness, r.glow, r.superSym, r.holdRelease, r.holdMs,
+            r.brightness, r.glow, r.glowWidth, r.letterCase, r.superSym, r.holdRelease, r.holdMs,
             r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict];
         this._order2 = [
-            [r.keyHeight, r.aspect, r.layout, r.fRow, r.brightness, r.glow, r.auto, r.submit, r.superSym, r.holdRelease,
+            [r.keyHeight, r.aspect, r.layout, r.fRow, r.brightness, r.glow, r.glowWidth, r.letterCase, r.auto, r.submit, r.superSym, r.holdRelease,
                 r.holdMs],
             [r.mode, r.shrink, r.opacity, r.dock,
                 r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict],
@@ -782,6 +811,18 @@ export const SettingsPanel = GObject.registerClass({
         this._glowLabel.text = formatGlow(v);
     }
 
+    _glowWidthValue() {
+        return Math.round(GLOW_W_MIN + this._glowWSlider.value * (GLOW_W_MAX - GLOW_W_MIN));
+    }
+
+    _syncGlowWidth() {
+        const px = this._settings.get_int('key-glow-width');
+        this._withSync(() => {
+            this._glowWSlider.value = (px - GLOW_W_MIN) / (GLOW_W_MAX - GLOW_W_MIN);
+        });
+        this._glowWLabel.text = `${px} px`;
+    }
+
     _opValue() {
         const v = OPACITY_MIN + this._opSlider.value * (OPACITY_MAX - OPACITY_MIN);
         return Math.round(v * 100) / 100;
@@ -895,7 +936,9 @@ export const SettingsPanel = GObject.registerClass({
         this._syncOpacity();
         this._syncBrightness();
         this._syncGlow();
+        this._syncGlowWidth();
         this._superSeg.setActive(this._settings.get_string('super-symbol'));
+        this._caseSeg.setActive(this._settings.get_string('letter-case'));
         this._barPosSeg.setActive(this._settings.get_string('suggestion-bar-position'));
         this._syncHoldRelease();
         this._syncHoldMs();
@@ -910,6 +953,7 @@ export const SettingsPanel = GObject.registerClass({
         this._opWriter.flush();
         this._brWriter.flush();
         this._glowWriter.flush();
+        this._glowWWriter.flush();
         this._holdWriter.flush();
     }
 
@@ -919,6 +963,7 @@ export const SettingsPanel = GObject.registerClass({
         this._opWriter.cancel();
         this._brWriter.cancel();
         this._glowWriter.cancel();
+        this._glowWWriter.cancel();
         this._holdWriter.cancel();
         if (this._clearConfirmId) {
             GLib.source_remove(this._clearConfirmId);
