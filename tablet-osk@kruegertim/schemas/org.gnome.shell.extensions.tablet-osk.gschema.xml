@@ -102,6 +102,11 @@
       <default>0.8</default>
       <summary>Brightness of the key labels (0.65–1.0; 1.0 = near white)</summary>
     </key>
+    <key name="press-flash-ms" type="i">
+      <range min="0" max="1000"/>
+      <default>250</default>
+      <summary>Pressed keys flash brightly and fade out over this many ms (0 = off)</summary>
+    </key>
     <key name="letter-case" type="s">
       <choices>
         <choice value="upper"/>

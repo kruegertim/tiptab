@@ -38,6 +38,7 @@ const SWIPE_SLOP = 0.25;    // start following the finger
 const SWIPE_TRIGGER = 1.0;  // the sequence becomes a swipe (pending key cancelled)
 const SWIPE_COMMIT = 0.5;   // on release: still this far down -> hide, else snap back
 
+const FLASH_PEAK_ALPHA = 0.85; // press flash: white over the key background
 const DIM_OPACITY = 115;    // ~45 % for inactive keycap glyphs
 
 const LATCH_MODIFIERS = ['altgr', 'fn', 'ctrl', 'alt', 'super'];
@@ -69,6 +70,68 @@ const S = Clutter.ActorAlign.START, E = Clutter.ActorAlign.END, C = Clutter.Acto
 // exactly the same lines as all others. The baselines come from the primary font's
 // ascent/descent, so they are identical on every key of a given height.
 const GLYPH_FONT_FAMILIES = 'Liberation Sans,Nimbus Sans,Noto Sans,sans-serif';
+
+// Hyphen and underscore are drawn as bars instead of font glyphs: in the bold key
+// font the hyphen is so short it looks like a dot and the underscore is much
+// thinner. Both bars get the same thickness; the hyphen sits at mid x-height,
+// the underscore just below the baseline. Behaves like a St.Label for
+// GlyphGridLayout (text + preferred size with the font's line metrics).
+const DASH_GLYPHS = new Set(['-', '_']);
+const FONT_ASCENT = 0.905;  // Liberation Sans line metrics (em)
+const FONT_DESCENT = 0.212;
+
+const DashGlyph = GObject.registerClass(
+class TabletOskDashGlyph extends St.Widget {
+    _init(text, styleClass) {
+        super._init({style_class: styleClass});
+        this.text = text;
+        this._px = 16;
+        this._bar = new St.Widget();
+        this.add_child(this._bar);
+    }
+
+    setFontPx(px) {
+        if (px === this._px)
+            return;
+        this._px = px;
+        this.queue_relayout();
+    }
+
+    vfunc_get_preferred_width(_forHeight) {
+        const w = Math.round(this._px * 0.56);
+        return [w, w];
+    }
+
+    vfunc_get_preferred_height(_forWidth) {
+        const h = Math.round(this._px * (FONT_ASCENT + FONT_DESCENT));
+        return [h, h];
+    }
+
+    vfunc_allocate(box) {
+        this.set_allocation(box);
+        const px = this._px;
+        const t = Math.max(2, Math.round(px * 0.12));
+        const baseline = Math.round(px * FONT_ASCENT);
+        let x1, x2, y1;
+        if (this.text === '_') {
+            x1 = 0;
+            x2 = Math.round(px * 0.56);
+            y1 = baseline + Math.round(px * 0.07);
+        } else {
+            x1 = Math.round(px * 0.04);
+            x2 = Math.round(px * 0.5);
+            y1 = Math.round(baseline - px * 0.27 - t / 2);
+        }
+        this._bar.allocate(new Clutter.ActorBox({x1, y1, x2, y2: y1 + t}));
+    }
+
+    vfunc_style_changed() {
+        super.vfunc_style_changed();
+        // bar in the inherited text colour (label-brightness, fn/latched states)
+        const c = this.get_theme_node().get_foreground_color();
+        this._bar.style = `background-color: rgba(${c.red}, ${c.green}, ${c.blue}, ${(c.alpha / 255).toFixed(3)});`;
+    }
+});
 
 const GlyphGridLayout = GObject.registerClass(
 class TabletOskGlyphGridLayout extends Clutter.LayoutManager {
@@ -212,6 +275,7 @@ class OskKey extends St.Widget {
         this.extendUp = def.enterPart === 'bottom';
 
         this._buildGlyphs(def, keyboard._superSymbol);
+        this.connect('destroy', () => this._stopFlash());
 
         this._toskTarget = {
             down: st => keyboard._keyDown(this, st),
@@ -267,7 +331,8 @@ class OskKey extends St.Widget {
                 // Real keycap arrangement: shift top-left, base bottom-left, AltGr
                 // bottom-right.
                 this._multi = true;
-                const glyph = (cls, text) => new St.Label({text, style_class: cls});
+                const glyph = (cls, text) => DASH_GLYPHS.has(text)
+                    ? new DashGlyph(text, cls) : new St.Label({text, style_class: cls});
                 const g = {base: glyph('tosk-glyph', base), shift: null, altgr: null};
                 if (shift)
                     g.shift = glyph('tosk-glyph', shift);
@@ -351,7 +416,7 @@ class OskKey extends St.Widget {
         const big = Math.round(h * 0.4);
         const glyph = Math.round(h * 0.32);
         const small = Math.max(7, Math.round(h * 0.2));
-        const narrow = this.units < 0.75; // compact-mode Esc / ^ (0.5 u)
+        const narrow = this.units < 0.8; // compact Esc / ^ (0.5 u), <> and Bild↑ (0.75 u)
         const padV = Math.round(h * 0.07), padH = Math.round(h * (narrow ? 0.04 : 0.11));
         this._padStyle = `padding: ${padV}px ${padH}px;`;
         this._h = h;
@@ -361,6 +426,7 @@ class OskKey extends St.Widget {
             for (const g of Object.values(this._glyphs)) {
                 if (g)
                     g.style = `font-size: ${glyph}px;`;
+                g?.setFontPx?.(glyph);
             }
             this._gridLayout.setFontPx(glyph);
         } else if (this._main) {
@@ -389,9 +455,57 @@ class OskKey extends St.Widget {
     applyStyle() {
         if (this._padStyle === undefined)
             return;
-        this.style = this._padStyle + keyGlowCss(this._keyboard.keyGlow, this._h,
+        let style = this._padStyle + keyGlowCss(this._keyboard.keyGlow, this._h,
             this._keyboard._gap, this.def.enterPart, this.has_style_class_name('tosk-locked'),
             this._keyboard.keyGlowWidth);
+        // Press flash: an inset shadow as wide as the key paints translucent white
+        // over the key background (labels stay on top). Overrides the glow while
+        // it fades out.
+        if (this._flashA > 0.005) {
+            const spread = Math.ceil(this._h ?? 60);
+            style += ` box-shadow: inset 0 0 0 ${spread}px rgba(255, 255, 255, ${this._flashA.toFixed(3)});`;
+        }
+        this.style = style;
+    }
+
+    // Light the key up brightly and let it fade out over `ms` (0 = off).
+    flash(ms) {
+        for (const k of [this, this.twin]) {
+            if (k)
+                k._flashOnce(ms);
+        }
+    }
+
+    _flashOnce(ms) {
+        this._stopFlash();
+        if (!(ms > 0))
+            return;
+        const tl = new Clutter.Timeline({actor: this, duration: ms});
+        tl.set_progress_mode(Clutter.AnimationMode.EASE_IN_QUAD);
+        tl.connect('new-frame', () => {
+            this._flashA = FLASH_PEAK_ALPHA * (1 - tl.get_progress());
+            this.applyStyle();
+        });
+        tl.connect('stopped', () => {
+            if (this._flashTl !== tl)
+                return;
+            this._flashTl = null;
+            this._flashA = 0;
+            this.applyStyle();
+        });
+        this._flashTl = tl;
+        this._flashA = FLASH_PEAK_ALPHA;
+        this.applyStyle();
+        tl.start();
+    }
+
+    _stopFlash() {
+        const tl = this._flashTl;
+        if (!tl)
+            return;
+        this._flashTl = null;
+        tl.stop();
+        this._flashA = 0;
     }
 
     // Highlight the glyph that the next tap produces; dim the others while
@@ -661,6 +775,10 @@ export const OskKeyboard = GObject.registerClass({
     // case unless Shift/Caps is active.
     get lowercaseLabels() {
         return this._hasKey('letter-case') && this._settings.get_string('letter-case') === 'shift';
+    }
+
+    get pressFlashMs() {
+        return this._hasKey('press-flash-ms') ? this._settings.get_int('press-flash-ms') : 0;
     }
 
     get keyGlowWidth() {
@@ -1233,6 +1351,7 @@ export const OskKeyboard = GObject.registerClass({
     _keyDown(key, st) {
         const def = key.def;
         key.setActive(true);
+        key.flash(this.pressFlashMs);
         if (def.type === 'modifier') {
             this._modDown(def.modifier, st);
             return;

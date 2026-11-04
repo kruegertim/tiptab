@@ -207,6 +207,20 @@ export default class TabletOskPreferences extends ExtensionPreferences {
         settings.bind('key-glow-width', glowWidthRow, 'value', Gio.SettingsBindFlags.DEFAULT);
         modeGroup.add(glowWidthRow);
 
+        const flashRow = new Adw.SpinRow({
+            title: 'Aufleuchten beim Drücken (ms)',
+            subtitle: 'Gedrückte Tasten blitzen hell auf und verblassen in dieser Zeit (0 = aus)',
+            digits: 0,
+            adjustment: new Gtk.Adjustment({
+                lower: 0,
+                upper: 1000,
+                step_increment: 50,
+                page_increment: 100,
+            }),
+        });
+        settings.bind('press-flash-ms', flashRow, 'value', Gio.SettingsBindFlags.DEFAULT);
+        modeGroup.add(flashRow);
+
         const resetRow = new Adw.ActionRow({
             title: 'Position zurücksetzen',
             subtitle: 'Schwebende Tastatur wieder zentriert am unteren Rand mit Standardbreite',

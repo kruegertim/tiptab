@@ -94,9 +94,9 @@ function caps() {
     return mod('Caps', '⇪', 'caps', 1.75);
 }
 
-function navCluster() {
+function navCluster(priorW = 1) {
     return [
-        sp('Prior', 'Bild↑', 'Prior', 1, {repeat: true, labelPos: 'tl'}),
+        sp('Prior', 'Bild↑', 'Prior', priorW, {repeat: true, labelPos: 'tl'}),
         sp('Up', '↑', 'Up', 1, {repeat: true}),
         sp('Next', 'Bild↓', 'Next', 1, {repeat: true, labelPos: 'tl'}),
     ];
@@ -169,13 +169,15 @@ function qwertz(compact) {
         ch('numbersign', '#', '\''),
         {id: 'Return', w: 1.25, type: 'enter', keysym: 'Return', label: '', enterPart: 'bottom', special: true},
     ];
+    // Left Shift 1.5 u: the <> key and Bild↑ give up 0.25 u each, so ↑ stays
+    // exactly above ↓.  1.5 + 0.75 + 10 + 0.75 + 1 + 1 = 15
     const r4 = [
-        mod('Shift', '⇧', 'shift', 1),
-        ch('less', '<', '>', '|'),
+        mod('Shift', '⇧', 'shift', 1.5),
+        ch('less', '<', '>', '|', 0.75),
         ch('y', 'y'), ch('x', 'x'), ch('c', 'c'), ch('v', 'v'), ch('b', 'b'), ch('n', 'n'),
         ch('m', 'm', null, 'µ'),
         ch('comma', ',', ';'), ch('period', '.', ':'), ch('minus', '-', '_'),
-        ...navCluster(),
+        ...navCluster(0.75),
     ];
     return [r1, r2, r3, r4, bottomRow()];
 }
@@ -284,7 +286,7 @@ function splitQwertz() {
             ch('h', 'h'), ch('j', 'j'), ch('k', 'k'), ch('l', 'l'), ch('odiaeresis', 'ö'),
             ch('adiaeresis', 'ä'), ch('numbersign', '#', '\''),
             {id: 'Return', w: 1.5, type: 'enter', keysym: 'Return', label: '', enterPart: 'bottom', special: true}],
-        [mod('Shift', '⇧', 'shift', 1), ch('less', '<', '>', '|'), ch('y', 'y'), ch('x', 'x'), ch('c', 'c'),
+        [mod('Shift', '⇧', 'shift', 1.25), ch('less', '<', '>', '|', 0.75), ch('y', 'y'), ch('x', 'x'), ch('c', 'c'),
             ch('v', 'v'), ch('b', 'b'), gap(),
             ch('n', 'n'), ch('m', 'm', null, 'µ'), ch('comma', ',', ';'), ch('period', '.', ':'),
             ch('minus', '-', '_'), ...splitShiftTail()],
