@@ -22,6 +22,7 @@ import St from 'gi://St';
 
 import {getLayout, getSplitLayout, TOTAL_UNITS, SPLIT_TOTAL_UNITS, FALLBACK_KEYVALS} from './layouts.js';
 import {KeyInjector} from './injector.js';
+import {paintJoinedKey} from './keyShape.js';
 import {isWaylandCompositor} from './compat.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
@@ -463,6 +464,12 @@ class OskKey extends St.Widget {
     applyStyle() {
         if (this._padStyle === undefined)
             return;
+        if (this._joined) {
+            // two-part key: the owner's drawing area paints the whole outline
+            this.style = `${this._padStyle} background-color: transparent; border-width: 0; box-shadow: none;`;
+            this._shapeOwner()?._shape.queue_repaint();
+            return;
+        }
         let style = this._padStyle + keyGlowCss(this._keyboard.keyGlow, this._h,
             this._keyboard._gap, this.joinPart, this.has_style_class_name('tosk-locked'),
             this._keyboard.keyGlowWidth);
@@ -550,6 +557,92 @@ class OskKey extends St.Widget {
             else
                 k.remove_style_pseudo_class('active');
         }
+        this._shapeOwner()?._shape.queue_repaint();
+    }
+
+    // ---- two-part keys (ISO Enter, angled Shift) drawn as one outline ----
+
+    // Called on the upper part after both parts exist; the lower part is the twin.
+    makeJoined() {
+        this._joined = true;
+        this.twin._joined = true;
+        this._shape = new St.DrawingArea({reactive: false});
+        this._shape.connect('repaint', area => this._paintShape(area));
+        this.insert_child_at_index(this._shape, 0);
+        this.applyStyle();
+        this.twin.applyStyle();
+    }
+
+    _shapeOwner() {
+        if (this._shape)
+            return this;
+        return this.twin?._shape ? this.twin : null;
+    }
+
+    vfunc_allocate(box) {
+        super.vfunc_allocate(box);
+        if (this._shape)
+            this._allocateShape();
+    }
+
+    _scale() {
+        try {
+            return St.ThemeContext.get_for_stage(global.stage).scale_factor;
+        } catch (e) {
+            return 1;
+        }
+    }
+
+    _glowBlurCss() {
+        const gap = this._keyboard._gap ?? 4;
+        const maxBlur = Math.max(1, Math.floor(gap / 2));
+        return Math.min(maxBlur, Math.max(1, Math.round(this._keyboard.keyGlowWidth ?? 2)));
+    }
+
+    // Geometry from the row grid (set by KeyRow before allocating): both parts
+    // use the same unit/gap as every other key, so all gaps stay equal.
+    _allocateShape() {
+        const g = this._rowGeom, t = this.twin;
+        if (!g || !t || t._cumStart === undefined)
+            return;
+        const H = this._keyboard._keyHeight;
+        const X = c => g.x0 + Math.round(c * g.unit);
+        const o = X(this._cumStart);
+        const a = {x1: 0, x2: X(this._cumEnd) - g.gap - o, y1: 0, y2: H};
+        const b = {x1: X(t._cumStart) - o, x2: X(t._cumEnd) - g.gap - o, y1: H + g.gap, y2: 2 * H + g.gap};
+        const m = (this._glowBlurCss() + 2) * this._scale();
+        const ox = Math.min(a.x1, b.x1) - m, oy = -m;
+        const x2 = Math.max(a.x2, b.x2) + m, y2 = b.y2 + m;
+        this._shapeGeom = {a, b, ox, oy};
+        this._shape.allocate(Clutter.ActorBox.new(ox, oy, x2, y2));
+        this._shape.queue_repaint();
+    }
+
+    _paintShape(area) {
+        if (!this._shapeGeom)
+            return;
+        const sf = this._scale();
+        const h = this._keyboard._keyHeight ?? 60;
+        let state = 'normal';
+        if (this.has_style_class_name('tosk-latched'))
+            state = 'latched';
+        else if (this.has_style_pseudo_class('active'))
+            state = 'active';
+        const cr = area.get_context();
+        try {
+            paintJoinedKey(cr, this._shapeGeom, {
+                radius: 6 * sf,
+                state,
+                locked: this.has_style_class_name('tosk-locked'),
+                flashA: Math.max(this._flashA ?? 0, this.twin?._flashA ?? 0),
+                glow: this._keyboard.keyGlow,
+                borderW: (h >= 72 ? 2 : 1) * sf,
+                blur: this._glowBlurCss() * sf,
+                lockBarW: 3 * sf,
+            });
+        } finally {
+            cr.$dispose();
+        }
     }
 
     setLatched(latched, locked = false) {
@@ -605,6 +698,7 @@ class KeyRow extends St.Widget {
             const x2 = Math.max(x1, content.x1 + Math.round(cum * unit) - gap);
             const y1 = content.y1 - (child.extendUp ? gap : 0);
             const y2 = content.y2 + (child.extendDown ? gap : 0);
+            child._rowGeom = {x0: content.x1, unit, gap};
             child.allocate(Clutter.ActorBox.new(x1, y1, x2, y2));
         }
     }
@@ -1192,15 +1286,20 @@ export const OskKeyboard = GObject.registerClass({
         const joinGroups = {};
         for (const rowDef of this._rows) {
             const row = new KeyRow(this);
+            let cum = 0;
             for (const def of rowDef) {
                 if (def.type === 'gap') {
                     // Thumb mode: empty, non-reactive middle (touches reach the app).
                     const spacer = new St.Widget({reactive: false});
                     spacer.units = def.w;
                     row.add_child(spacer);
+                    cum += def.w;
                     continue;
                 }
                 const key = new OskKey(def, this);
+                key._cumStart = cum;
+                cum += def.w;
+                key._cumEnd = cum;
                 row.add_child(key);
                 this._keys.push(key);
                 if (def.type === 'modifier')
@@ -1212,15 +1311,13 @@ export const OskKeyboard = GObject.registerClass({
             }
             this._rowsBox.add_child(row);
         }
-        if (enterParts.length === 2) {
-            enterParts[0].twin = enterParts[1];
-            enterParts[1].twin = enterParts[0];
-        }
-        for (const parts of Object.values(joinGroups)) {
-            if (parts.length === 2) {
-                parts[0].twin = parts[1];
-                parts[1].twin = parts[0];
-            }
+        for (const parts of [enterParts, ...Object.values(joinGroups)]) {
+            if (parts.length !== 2)
+                continue;
+            parts[0].twin = parts[1];
+            parts[1].twin = parts[0];
+            // parts[0] is the upper part (rows are built top to bottom)
+            parts[0].makeJoined();
         }
 
         for (const k of this._keys)
