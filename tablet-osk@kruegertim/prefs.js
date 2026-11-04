@@ -164,6 +164,35 @@ export default class TabletOskPreferences extends ExtensionPreferences {
         });
         modeGroup.add(brightnessRow);
 
+        const glowRow = new Adw.SpinRow({
+            title: 'Leuchtrand der Tasten (%)',
+            subtitle: 'Heller, leicht leuchtender Rand um die Tasten (0 % = aus)',
+            digits: 0,
+            adjustment: new Gtk.Adjustment({
+                lower: 0,
+                upper: 100,
+                step_increment: 10,
+                page_increment: 25,
+            }),
+        });
+        const syncGlow = () => {
+            const pct = Math.round(settings.get_double('key-glow') * 100);
+            if (glowRow.value !== pct)
+                glowRow.value = pct;
+        };
+        syncGlow();
+        glowRow.connect('notify::value', () => {
+            const v = glowRow.value / 100;
+            if (Math.abs(settings.get_double('key-glow') - v) > 0.001)
+                settings.set_double('key-glow', v);
+        });
+        const glowId = settings.connect('changed::key-glow', syncGlow);
+        window.connect('close-request', () => {
+            settings.disconnect(glowId);
+            return false;
+        });
+        modeGroup.add(glowRow);
+
         const resetRow = new Adw.ActionRow({
             title: 'Position zurücksetzen',
             subtitle: 'Schwebende Tastatur wieder zentriert am unteren Rand mit Standardbreite',

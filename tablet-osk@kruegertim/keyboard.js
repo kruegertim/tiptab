@@ -151,6 +151,33 @@ class TabletOskGlyphGridLayout extends Clutter.LayoutManager {
     }
 });
 
+// Glowing key rim: a thin light border plus a soft outer glow, so the dark keys
+// stand out from the keyboard background. strength 0 = off, 1 = strongest.
+// ISO Enter halves leave out the border on the joining side, and the lower half
+// gets no outer glow (it would shine onto the upper half at the seam).
+export function keyGlowCss(strength, h, gap, enterPart = null, locked = false) {
+    const s = Math.min(1, Math.max(0, strength ?? 0));
+    if (s <= 0.001)
+        return '';
+    const bw = h >= 72 ? 2 : 1;
+    const borderA = (0.12 + 0.33 * s).toFixed(3);
+    let widths = `${bw}px`;
+    if (enterPart === 'top')
+        widths = `${bw}px ${bw}px 0 ${bw}px`;
+    else if (enterPart === 'bottom')
+        widths = `0 ${bw}px ${bw}px ${bw}px`;
+    let css = ` border-width: ${widths}; border-color: rgba(255, 255, 255, ${borderA});`;
+    if (locked) {
+        // keep the white "locked" bar of .tosk-locked (only one shadow possible in St)
+        css += ' box-shadow: inset 0 -3px 0 0 #ffffff;';
+    } else if (enterPart !== 'bottom') {
+        const blur = Math.max(2, Math.min(gap ?? 4, Math.round(h * 0.09)));
+        const glowA = (0.08 + 0.32 * s).toFixed(3);
+        css += ` box-shadow: 0 0 ${blur}px 0 rgba(255, 255, 255, ${glowA});`;
+    }
+    return css;
+}
+
 const OskKey = GObject.registerClass(
 class OskKey extends St.Widget {
     _init(def, keyboard) {
@@ -322,7 +349,9 @@ class OskKey extends St.Widget {
         const small = Math.max(7, Math.round(h * 0.2));
         const narrow = this.units < 0.75; // compact-mode Esc / ^ (0.5 u)
         const padV = Math.round(h * 0.07), padH = Math.round(h * (narrow ? 0.04 : 0.11));
-        this.style = `padding: ${padV}px ${padH}px;`;
+        this._padStyle = `padding: ${padV}px ${padH}px;`;
+        this._h = h;
+        this.applyStyle();
 
         if (this._multi) {
             for (const g of Object.values(this._glyphs)) {
@@ -348,6 +377,16 @@ class OskKey extends St.Widget {
             this._fnIcon.icon_size = Math.round(h * (this.def.fnCentre ? 0.34 : 0.22));
         if (this._fnText)
             this._fnText.style = `font-size: ${this.def.fnCentre ? Math.round(h * 0.26) : small}px;`;
+    }
+
+    // Inline style: padding (from setHeight) plus the optional glowing rim
+    // (key-glow setting). Re-applied when the glow or the locked state changes,
+    // because an inline box-shadow overrides the .tosk-locked inset bar.
+    applyStyle() {
+        if (this._padStyle === undefined)
+            return;
+        this.style = this._padStyle + keyGlowCss(this._keyboard.keyGlow, this._h,
+            this._keyboard._gap, this.def.enterPart, this.has_style_class_name('tosk-locked'));
     }
 
     // Highlight the glyph that the next tap produces; dim the others while
@@ -391,6 +430,7 @@ class OskKey extends St.Widget {
                 k.add_style_class_name('tosk-locked');
             else
                 k.remove_style_class_name('tosk-locked');
+            k.applyStyle();
         }
     }
 
@@ -543,6 +583,10 @@ export const OskKeyboard = GObject.registerClass({
             'changed::layout', () => this._rebuild(),
             'changed::show-f-row', () => this._rebuild(),
             'changed::label-brightness', () => this._applyContainerStyle(),
+            'changed::key-glow', () => {
+                for (const k of this._keys)
+                    k.applyStyle();
+            },
             'changed::suggestions', () => this._syncBarVisible(),
             'changed::suggestion-bar-position', () => this._syncBarPosition(),
             'changed::super-symbol', () => {
@@ -591,6 +635,10 @@ export const OskKeyboard = GObject.registerClass({
     _holdMs() {
         return this._hasKey('modifier-hold-ms')
             ? this._settings.get_int('modifier-hold-ms') : DEFAULT_HOLD_MS;
+    }
+
+    get keyGlow() {
+        return this._hasKey('key-glow') ? this._settings.get_double('key-glow') : 0;
     }
 
     _swipeEnabled() {
