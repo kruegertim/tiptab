@@ -157,21 +157,25 @@ export class ModalBridge {
                 return false;
             const actor = global.stage.get_event_actor(event);
             const root = this._rootFor(actor);
-            if (root) {
-                const handled = dispatchThroughChain(actor, root, event);
-                if (begins)
-                    this._seqs.set(key, {root, leaf: actor});
-                return handled || begins;
-            }
+            let handled = false;
+            if (root)
+                handled = dispatchThroughChain(actor, root, event);
             if (!begins)
-                return false;
-            for (const handler of this._handlers) {
-                if (handler(event)) {
-                    this._seqs.set(key, {handler});
-                    return true;
+                return handled;
+            // A press our UI ignored (e.g. a touch on the mouse-only bottom strip) may
+            // still start a fallback gesture such as the touch edge swipe.
+            if (!handled) {
+                for (const handler of this._handlers) {
+                    if (handler(event)) {
+                        this._seqs.set(key, {handler});
+                        return true;
+                    }
                 }
             }
-            return false;
+            if (!root)
+                return false;
+            this._seqs.set(key, {root, leaf: actor});
+            return true;
         }
 
         if (ends)
