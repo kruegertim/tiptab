@@ -3,7 +3,8 @@
 //
 // Rules:
 //  - "Text focus" = Main.inputMethod 'input-panel-state' ON (Wayland text-input / IBus
-//    clients) or an editable Clutter.Text holding the stage key focus (shell entries).
+//    clients; for clients that never request the panel, e.g. Chrome, the first
+//    text-input activity after a focus-out) or an editable Clutter.Text holding the stage key focus (shell entries).
 //    Main.inputMethod has no focus-in/focus-out signals in GNOME 46 (only commit,
 //    cursor-location-changed, delete-surrounding, input-panel-state, request-surrounding,
 //    surrounding-text-set), so input-panel-state is the app-side trigger; the shell's
@@ -298,6 +299,17 @@ export class VisibilityController {
 
         Main.inputMethod.connectObject('input-panel-state',
             (_im, state) => this._onPanelState(state), this);
+        // Fallback focus-in for clients that enable text-input but never ask for the
+        // input panel (Chrome with --enable-wayland-ime): their first text-input
+        // activity after a focus-out counts as ON. Focus-out still comes as OFF from
+        // the shell's InputMethod.
+        this._imActive = false;
+        Main.inputMethod.connectObject(
+            'cursor-location-changed', () => this._onImActivity('cursor'),
+            'request-surrounding', () => this._onImActivity('request-surrounding'),
+            'notify::content-purpose', () => this._onImActivity('purpose'),
+            'notify::content-hints', () => this._onImActivity('hints'),
+            this);
         global.stage.connectObject('notify::key-focus',
             () => this._onKeyFocusChanged(), this);
 
@@ -583,6 +595,11 @@ export class VisibilityController {
             return; // multi-line: Enter is just a newline
         this._clearSubmit();
         this._submitShellText = shellText;
+        // The entry may be destroyed before the timer fires (unlock/login prompt after
+        // Enter); reading .text from a disposed Clutter.Text throws.
+        shellText?.connectObject('destroy', () => {
+            this._submitShellText = null;
+        }, this._submitTag);
         this._submitId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, SUBMIT_WINDOW_MS, () => {
             this._submitId = 0;
             this._checkSubmitCleared(true);
@@ -598,7 +615,12 @@ export class VisibilityController {
         if (!this._submitId && !final)
             return;
         const st = this._submitShellText;
-        const text = st ? st.text : Main.inputMethod._surroundingText;
+        let text = null;
+        try {
+            text = st ? st.text : Main.inputMethod._surroundingText;
+        } catch {
+            text = null;   // entry already disposed
+        }
         if (typeof text === 'string' && text.length === 0 && this._mode === 'auto' && this._isShown()) {
             this._clearSubmit();
             this._cancelTimers();
@@ -614,6 +636,10 @@ export class VisibilityController {
             this._submitId = 0;
         }
         Main.inputMethod.disconnectObject(this._submitTag);
+        try {
+            this._submitShellText?.disconnectObject(this._submitTag);
+        } catch {}
+        this._submitShellText = null;
     }
 
     // ---- focus tracking ----
@@ -631,7 +657,32 @@ export class VisibilityController {
             this._focusOut();
     }
 
+    _imHasFocus() {
+        // Private field of the shell's InputMethod (set in vfunc_focus_in, cleared in
+        // vfunc_focus_out). If it ever goes away, trust the activity itself.
+        const im = Main.inputMethod;
+        return '_currentFocus' in im ? !!im._currentFocus : true;
+    }
+
+    _onImActivity(what) {
+        if (this._imActive || this._imeWants || !this._imHasFocus())
+            return;
+        this._imActive = true;
+        console.log(`${LOG_PREFIX} text-input activity (${what}) without input-panel-state ON ` +
+            `→ treating as focus-in (purpose ${Main.inputMethod.content_purpose ?? '?'})`);
+        this._imeWants = true;
+        this._focusIn();
+    }
+
     _onPanelState(state) {
+        if (state === Clutter.InputPanelState.OFF)
+            this._imActive = false;
+        else
+            this._imActive = true;
+        // One line per app text-field focus change, so "no auto-show in app X" can be
+        // told apart from "app X never reports its fields" in the journal.
+        console.log(`${LOG_PREFIX} input-panel-state ${state} (auto allowed: ${this._autoAllowed()}, ` +
+            `purpose ${Main.inputMethod.content_purpose ?? '?'})`);
         switch (state) {
         case Clutter.InputPanelState.ON:
             this._imeWants = true;
