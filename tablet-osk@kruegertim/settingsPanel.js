@@ -142,6 +142,8 @@ export const SettingsPanel = GObject.registerClass({
             'changed::mode', () => this._syncMode(),
             'changed::show-f-row', () => this._syncSwitch(this._fRowSwitch, 'show-f-row'),
             'changed::layout', () => this._syncLayout(),
+            'changed::layout-style', () => this._syncLayout(),
+            'changed::auto-capitalize', () => this._syncSwitch(this._autoCapSwitch, 'auto-capitalize'),
             'changed::shrink-workarea', () => this._syncSwitch(this._shrinkSwitch, 'shrink-workarea'),
             'changed::auto-show', () => this._syncSwitch(this._autoSwitch, 'auto-show'),
             'changed::hide-after-submit', () => this._syncSwitch(this._submitSwitch, 'hide-after-submit'),
@@ -285,6 +287,18 @@ export const SettingsPanel = GObject.registerClass({
             r.layout = this._row('Layout', seg.actor);
         }
 
+        // Tastenanordnung: klassisch (ThinkPad) oder Touch (Windows-11-artig)
+        {
+            const seg = this._segmented([['classic', 'Klassisch'], ['touch', 'Touch']],
+                id => this._settings.set_string('layout-style', id));
+            this._styleSeg = seg;
+            r.style = this._row('Anordnung', seg.actor);
+        }
+
+        // Satzanfang groß (nur Touch)
+        this._autoCapSwitch = this._switch('auto-capitalize');
+        r.autoCap = this._row('Satzanfang groß', this._autoCapSwitch);
+
         // Inhalt verkleinern
         this._shrinkSwitch = this._switch('shrink-workarea');
         r.shrink = this._row('Inhalt verkleinern', this._shrinkSwitch);
@@ -405,11 +419,11 @@ export const SettingsPanel = GObject.registerClass({
 
         this._rows = r;
         // single-column order (contract order) and two-column order (left | right)
-        this._order1 = [r.keyHeight, r.aspect, r.mode, r.fRow, r.layout, r.shrink, r.auto, r.submit, r.dock, r.opacity,
+        this._order1 = [r.keyHeight, r.aspect, r.mode, r.style, r.fRow, r.layout, r.autoCap, r.shrink, r.auto, r.submit, r.dock, r.opacity,
             r.brightness, r.superSym, r.holdRelease, r.holdMs,
             r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict];
         this._order2 = [
-            [r.keyHeight, r.aspect, r.layout, r.fRow, r.brightness, r.auto, r.submit, r.superSym, r.holdRelease,
+            [r.keyHeight, r.aspect, r.style, r.layout, r.fRow, r.autoCap, r.brightness, r.auto, r.submit, r.superSym, r.holdRelease,
                 r.holdMs],
             [r.mode, r.shrink, r.opacity, r.dock,
                 r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict],
@@ -828,6 +842,13 @@ export const SettingsPanel = GObject.registerClass({
 
     _syncLayout() {
         this._layoutSeg.setActive(this._settings.get_string('layout'));
+        const style = this._settings.get_string('layout-style');
+        this._styleSeg.setActive(style);
+        // F-Reihe only exists in the classic arrangement, Satzanfang groß only in Touch.
+        if (this._rows?.fRow)
+            this._setRowSensitive(this._rows.fRow, this._fRowSwitch, style !== 'touch');
+        if (this._rows?.autoCap)
+            this._setRowSensitive(this._rows.autoCap, this._autoCapSwitch, style === 'touch');
     }
 
     _syncMode() {
@@ -853,6 +874,7 @@ export const SettingsPanel = GObject.registerClass({
         this._syncMode();
         this._syncSwitch(this._fRowSwitch, 'show-f-row');
         this._syncLayout();
+        this._syncSwitch(this._autoCapSwitch, 'auto-capitalize');
         this._syncSwitch(this._shrinkSwitch, 'shrink-workarea');
         this._syncSwitch(this._autoSwitch, 'auto-show');
         this._syncSwitch(this._submitSwitch, 'hide-after-submit');
