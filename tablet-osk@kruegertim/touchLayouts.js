@@ -21,7 +21,7 @@
 //   emoji         emoji key (no bold, no repeat)
 //   pageLabel     page indicator key of the symbol layers
 
-export const TOUCH_TOTAL_UNITS = 13.5;
+export const TOUCH_TOTAL_UNITS = 14.25;
 const SPLIT_GAP_UNITS = 7; // must match layouts.js
 
 // ---------------------------------------------------------------- alternatives
@@ -106,6 +106,9 @@ const shift = (id, w) => mod(id, '⇧', 'shift', w);
 const ctrl = w => mod('Ctrl', 'Strg', 'ctrl', w);
 const hide = w => ({id: 'Hide', w, type: 'hide', icon: 'keyboard-hide-symbolic', special: true});
 const emojiKey = w => layerKey('EmojiLayer', '☺', 'emoji', w);
+// Opens the settings panel (the touch style has no Fn key for Fn+Space).
+const settingsKey = w => ({id: 'Settings', w, type: 'special', icon: 'emblem-system-symbolic', special: true,
+    action: 'settings'});
 const left = () => sp('Left', '←', 'Left', 1, {repeat: true});
 const right = () => sp('Right', '→', 'Right', 1, {repeat: true});
 const up = () => sp('Up', '↑', 'Up', 1, {repeat: true});
@@ -126,24 +129,34 @@ function topRow(letters) {
 
 // ---------------------------------------------------------------- abc
 
+// Row stagger like a real keyboard: A row 0.5 u right of the Q row, Y row another 0.5 u
+// (so D sits below between E and R, B below between G and H).
+function abcBottom(split) {
+    if (split) {
+        return [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1), settingsKey(1),
+            space('space', 2.25), gap(), space('space_r', 3), left(), up(), down(), right(), hide(1.5)];
+    }
+    return [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1), settingsKey(1),
+        space('space', 4.5), left(), up(), down(), right(), hide(1)];
+}
+
 function abcQwertz(split) {
     if (split) {
+        // left: Q at 1.25, A at 1.5, Y at 2 (real stagger 0.25 / 0.5); right: Z, H, N likewise
         const r1 = topRow('qwertzuiopü');
         return [
-            [esc(2), ...r1.slice(0, 5), gap(), ...r1.slice(5), backspace(2.5)],
-            [tab(2), ...chars('asdfg'), gap(), ...chars('hjklöä'), enter(2.5)],
-            [shift('Shift', 2), ...chars('yxcvb'), gap(), ...chars('nm,.-'), ch('?', {shift: '!'}),
-                shift('Shift_R', 2.5)],
-            [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1.25), space('space', 3), gap(),
-                space('space_r', 3), left(), up(), down(), right(), hide(1.5)],
+            [esc(1.25), ...r1.slice(0, 5), pad(0.75), gap(), ...r1.slice(5), backspace(2.5)],
+            [tab(1.5), ...chars('asdfg'), pad(0.5), gap(), pad(0.25), ...chars('hjklöä'), enter(2.25)],
+            [shift('Shift', 2), ...chars('yxcvb'), gap(), pad(0.75), ...chars('nm,.-'), ch('?', {shift: '!'}),
+                shift('Shift_R', 1.75)],
+            abcBottom(true),
         ];
     }
     return [
-        [tab(1), ...topRow('qwertzuiopü'), backspace(1.5)],
-        [pad(0.5), ...chars('asdfghjklöä'), enter(2)],
-        [shift('Shift', 1.5), ...chars('yxcvbnm,.-'), ch('?', {shift: '!'}), shift('Shift_R', 1)],
-        [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1), space('space', 6.75),
-            left(), right(), hide(1)],
+        [tab(1.25), ...topRow('qwertzuiopü'), backspace(2)],
+        [pad(1.75), ...chars('asdfghjklöä'), enter(1.5)],
+        [shift('Shift', 2.25), ...chars('yxcvbnm,.-'), ch('?', {shift: '!'}), shift('Shift_R', 1)],
+        abcBottom(false),
     ];
 }
 
@@ -151,21 +164,19 @@ function abcQwerty(split) {
     if (split) {
         const r1 = topRow('qwertyuiop');
         return [
-            [esc(2), ...r1.slice(0, 5), gap(), ...r1.slice(5), ch('-', {shift: '_'}), backspace(2.5)],
-            [tab(2), ...chars('asdfg'), gap(), ...chars('hjkl'), ch(';', {shift: ':'}),
-                ch('\'', {shift: '"'}), enter(2.5)],
-            [shift('Shift', 2), ...chars('zxcvb'), gap(), ...chars('nm,.'), ch('/', {shift: '?'}),
-                ch('?', {shift: '!'}), shift('Shift_R', 2.5)],
-            [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1.25), space('space', 3), gap(),
-                space('space_r', 3), left(), up(), down(), right(), hide(1.5)],
+            [esc(1.25), ...r1.slice(0, 5), pad(0.75), gap(), ...r1.slice(5), ch('-', {shift: '_'}), backspace(2.5)],
+            [tab(1.5), ...chars('asdfg'), pad(0.5), gap(), pad(0.25), ...chars('hjkl'), ch(';', {shift: ':'}),
+                ch('\'', {shift: '"'}), enter(2.25)],
+            [shift('Shift', 2), ...chars('zxcvb'), gap(), pad(0.75), ...chars('nm,.'), ch('/', {shift: '?'}),
+                ch('?', {shift: '!'}), shift('Shift_R', 1.75)],
+            abcBottom(true),
         ];
     }
     return [
-        [tab(1.5), ...topRow('qwertyuiop'), backspace(2)],
-        [pad(0.75), ...chars('asdfghjkl'), ch('\'', {shift: '"'}), enter(2.75)],
-        [shift('Shift', 1.5), ...chars('zxcvbnm,.'), ch('?', {shift: '!'}), shift('Shift_R', 2)],
-        [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1), space('space', 6.75),
-            left(), right(), hide(1)],
+        [tab(1.25), ...topRow('qwertyuiop'), ch('-', {shift: '_'}), backspace(2)],
+        [pad(1.75), ...chars('asdfghjkl'), ch(';', {shift: ':'}), ch('\'', {shift: '"'}), enter(1.5)],
+        [shift('Shift', 2.25), ...chars('zxcvbnm,./'), ch('?', {shift: '!'}), shift('Shift_R', 1)],
+        abcBottom(false),
     ];
 }
 
@@ -199,10 +210,10 @@ function sym1(split) {
         ];
     }
     return [
-        [tab(1), ...chars('!@#$%&()'), ...chars(NUM_ROWS[0]), backspace(1.5)],
-        [esc(1), ...chars('"\'/\\-_=+'), ...chars(NUM_ROWS[1]), enter(1.5)],
-        [pageKey(1, 1), ...chars('*€:;<>'), up(), ch('?'), ...chars(NUM_ROWS[2]), hide(1.5)],
-        bottomSym(false, [left(), down(), right(), ch('0', {w: 2}), ch(','), ch('.', {w: 1.5})]),
+        [tab(1), ...chars('!@#$%&()'), ...chars(NUM_ROWS[0]), backspace(2.25)],
+        [esc(1), ...chars('"\'/\\-_=+'), ...chars(NUM_ROWS[1]), enter(2.25)],
+        [pageKey(1, 1), ...chars('*€:;<>'), up(), ch('?'), ...chars(NUM_ROWS[2]), hide(2.25)],
+        bottomSym(false, [left(), down(), right(), ch('0', {w: 2}), ch(','), ch('.', {w: 2.25})]),
     ];
 }
 
@@ -226,10 +237,10 @@ function sym2(split) {
         ];
     }
     return [
-        [tab(1), ...chars('[]{}^°~`'), POS1(), PGUP(), INS(), backspace(1.5)],
-        [esc(1), ...chars('|´§µ²³£¥'), ENDE(), PGDN(), DEL(), enter(1.5)],
-        [pageKey(2, 1), ...chars('«»„“”…'), up(), ch('¬'), ...chars('–—·'), hide(1.5)],
-        bottomSym(false, [left(), down(), right(), alt(1.5), sup(1.5), sp('Print', 'Druck', 'Print', 1.5)]),
+        [tab(1), ...chars('[]{}^°~`'), POS1(), PGUP(), INS(), backspace(2.25)],
+        [esc(1), ...chars('|´§µ²³£¥'), ENDE(), PGDN(), DEL(), enter(2.25)],
+        [pageKey(2, 1), ...chars('«»„“”…'), up(), ch('¬'), ...chars('–—·'), hide(2.25)],
+        bottomSym(false, [left(), down(), right(), alt(1.5), sup(1.5), sp('Print', 'Druck', 'Print', 2.25)]),
     ];
 }
 
@@ -273,13 +284,13 @@ function sym3(split) {
         ];
     }
     return [
-        [esc(1), ...fkeys(1, 8), m.mute(), m.voldown(), m.volup(), backspace(1.5)],
+        [esc(1), ...fkeys(1, 8), m.mute(), m.voldown(), m.volup(), backspace(2.25)],
         [tab(1), ...fkeys(9, 12), m.mic(), m.briDown(), m.briUp(), m.display(), m.prev(), m.play(), m.next(),
-            enter(1.5)],
+            enter(2.25)],
         [pageKey(3, 1), sp('Menu', 'Menü', 'Menu'), sp('Print', 'Druck', 'Print'), sp('Pause', 'Pause', 'Pause'),
             sp('Scroll_Lock', 'Rollen', 'Scroll_Lock'), m.wlan(), m.bt(), up(), m.tools(),
-            POS1(), ENDE(), INS(), hide(1.5)],
-        bottomSym(false, [left(), down(), right(), alt(2.25), sup(2.25)]),
+            POS1(), ENDE(), INS(), hide(2.25)],
+        bottomSym(false, [left(), down(), right(), alt(2.25), sup(3)]),
     ];
 }
 
@@ -361,10 +372,10 @@ function emojiRows(cat, page, recent, split) {
         ];
     }
     return [
-        [...row(0), backspace(1.5)],
-        [...row(1), enter(1.5)],
-        [...row(2), hide(1.5)],
-        [abcKey(1.5), ...catKeys, space('space', 1), prev, next],
+        [...row(0), backspace(2.25)],
+        [...row(1), enter(2.25)],
+        [...row(2), hide(2.25)],
+        [abcKey(1.5), ...catKeys, space('space', 1.75), prev, next],
     ];
 }
 
