@@ -1662,6 +1662,11 @@ export const OskKeyboard = GObject.registerClass({
         const shift = this._modActive('shift');
         const withShift = shift ? [Clutter.KEY_Shift_L, ...mods] : mods;
 
+        if (def.action === 'settings') {
+            this.emit('settings-request');
+            return;
+        }
+
         if (this._modActive('fn') && def.fnAction === 'settings') {
             this.emit('settings-request');
             return;
