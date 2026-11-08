@@ -150,11 +150,12 @@ function upDown() {
 
 function abcBottom(split) {
     if (split) {
-        return [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1), settingsKey(1),
-            space('space', 2.25), gap(), space('space_r', 4), left(), upDown(), right(), hide(1.5)];
+        return [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1),
+            space('space', 3.25), gap(), space('space_r', 4), left(), upDown(), right(), settingsKey(1.5)];
     }
-    return [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1), settingsKey(1),
-        space('space', 5.5), left(), upDown(), right(), hide(1)];
+    // No hide key here: swipe down hides the keyboard.
+    return [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1),
+        space('space', 6.5), left(), upDown(), right(), settingsKey(1)];
 }
 
 function abcQwertz(split) {
