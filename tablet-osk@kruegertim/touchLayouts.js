@@ -154,7 +154,7 @@ function abcQwertz(split) {
     }
     return [
         [tab(1.25), ...topRow('qwertzuiopü'), backspace(2)],
-        [pad(1.75), ...chars('asdfghjklöä'), enter(1.5)],
+        [mod('Caps', '⇪', 'caps', 1.75), ...chars('asdfghjklöä'), enter(1.5)],
         [shift('Shift', 2.25), ...chars('yxcvbnm,.-'), ch('?', {shift: '!'}), shift('Shift_R', 1)],
         abcBottom(false),
     ];
@@ -174,7 +174,7 @@ function abcQwerty(split) {
     }
     return [
         [tab(1.25), ...topRow('qwertyuiop'), ch('-', {shift: '_'}), backspace(2)],
-        [pad(1.75), ...chars('asdfghjkl'), ch(';', {shift: ':'}), ch('\'', {shift: '"'}), enter(1.5)],
+        [mod('Caps', '⇪', 'caps', 1.75), ...chars('asdfghjkl'), ch(';', {shift: ':'}), ch('\'', {shift: '"'}), enter(1.5)],
         [shift('Shift', 2.25), ...chars('zxcvbnm,./'), ch('?', {shift: '!'}), shift('Shift_R', 1)],
         abcBottom(false),
     ];
