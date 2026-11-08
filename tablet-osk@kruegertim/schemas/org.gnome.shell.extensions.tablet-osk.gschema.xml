@@ -4,6 +4,10 @@
     <value nick="qwertz" value="0"/>
     <value nick="qwerty" value="1"/>
   </enum>
+  <enum id="org.gnome.shell.extensions.tablet-osk.LayoutStyle">
+    <value nick="classic" value="0"/>
+    <value nick="touch" value="1"/>
+  </enum>
   <enum id="org.gnome.shell.extensions.tablet-osk.Mode">
     <value nick="docked" value="0"/>
     <value nick="floating" value="1"/>
@@ -28,6 +32,18 @@
     <key name="layout" enum="org.gnome.shell.extensions.tablet-osk.Layout">
       <default>'qwertz'</default>
       <summary>Keyboard layout (qwertz = German, qwerty = US)</summary>
+    </key>
+    <key name="layout-style" enum="org.gnome.shell.extensions.tablet-osk.LayoutStyle">
+      <default>'classic'</default>
+      <summary>Key arrangement: classic (ThinkPad-like, 5–6 rows) or touch (4 rows, symbol/number layer, emoji, long-press accents; inspired by the Windows 11 touch keyboard)</summary>
+    </key>
+    <key name="auto-capitalize" type="b">
+      <default>true</default>
+      <summary>Touch style: start sentences (after . ! ? and Enter) with a capital letter</summary>
+    </key>
+    <key name="recent-emoji" type="as">
+      <default>[]</default>
+      <summary>Internal: recently used emoji (touch style emoji panel)</summary>
     </key>
     <key name="show-f-row" type="b">
       <default>true</default>
