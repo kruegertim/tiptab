@@ -1128,7 +1128,7 @@ export const OskKeyboard = GObject.registerClass({
                     for (const partDef of def.parts) {
                         const part = new OskKey(partDef, this);
                         part.y_expand = true;
-                        part.heightScale = 0.6;
+                        part.heightScale = 0.9; // glyphs nearly full size, padding stays small
                         box.add_child(part);
                         this._keys.push(part);
                     }
