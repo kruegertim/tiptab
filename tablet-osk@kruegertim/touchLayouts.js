@@ -141,7 +141,7 @@ function shiftBottom(w) {
     return mod('Shift', '⇧', 'shift', w, {joinPart: 'bottom', joinGroup: 'shift'});
 }
 
-const question = () => ch('?', {shift: '!'});
+const question = (w = 1) => ch('?', {shift: '!', w});
 
 // ↑ above ↓ in one key slot between ← and →.
 function upDown() {
@@ -151,11 +151,17 @@ function upDown() {
 function abcBottom(split) {
     if (split) {
         return [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1),
-            space('space', 3.25), gap(), space('space_r', 4), left(), upDown(), right(), settingsKey(1.5)];
+            space('space', 3.25), gap(), space('space_r', 3), left(), up(), down(), right(), settingsKey(1.5)];
     }
-    // No hide key here: swipe down hides the keyboard.
+    // No hide key here: swipe down hides the keyboard. Arrows as an inverted T: ↑ sits in
+    // the Shift row above ↓ (see shiftRowTail()).
     return [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1),
-        space('space', 6.5), left(), upDown(), right(), settingsKey(1)];
+        space('space', 6.5), settingsKey(1), left(), down(), right()];
+}
+
+// Right end of the Shift row (docked): ↑ above ↓, then a 1 u right Shift.
+function shiftRowTail() {
+    return [up(), shift('Shift_R', 1)];
 }
 
 function abcQwertz(split) {
@@ -164,16 +170,15 @@ function abcQwertz(split) {
         const r1 = topRow('qwertzuiopü');
         return [
             [esc(1.25), ...r1.slice(0, 5), pad(0.75), gap(), ...r1.slice(5), backspace(2.5)],
-            [shiftTop(0.5), question(), ...chars('asdfg'), pad(0.5), gap(), pad(0.25), ...chars('hjklöä'),
-                enter(2.25)],
-            [shiftBottom(2), ...chars('yxcvb'), gap(), pad(0.75), ...chars('nm,.-'), shift('Shift_R', 2.75)],
+            [question(1.5), ...chars('asdfg'), pad(0.5), gap(), pad(0.25), ...chars('hjklöä'), enter(2.25)],
+            [shift('Shift', 2), ...chars('yxcvb'), gap(), pad(0.75), ...chars('nm,.-'), shift('Shift_R', 2.75)],
             abcBottom(true),
         ];
     }
     return [
         [tab(1.25), ...topRow('qwertzuiopü'), backspace(2)],
-        [shiftTop(0.75), question(), ...chars('asdfghjklöä'), enter(1.5)],
-        [shiftBottom(2.25), ...chars('yxcvbnm,.-'), shift('Shift_R', 2)],
+        [question(1.75), ...chars('asdfghjklöä'), enter(1.5)],
+        [shift('Shift', 2.25), ...chars('yxcvbnm,.-'), ...shiftRowTail()],
         abcBottom(false),
     ];
 }
@@ -183,18 +188,18 @@ function abcQwerty(split) {
         const r1 = topRow('qwertyuiop');
         return [
             [esc(1.25), ...r1.slice(0, 5), pad(0.75), gap(), ...r1.slice(5), ch('-', {shift: '_'}), backspace(2.5)],
-            [shiftTop(0.5), question(), ...chars('asdfg'), pad(0.5), gap(), pad(0.25), ...chars('hjkl'),
+            [question(1.5), ...chars('asdfg'), pad(0.5), gap(), pad(0.25), ...chars('hjkl'),
                 ch(';', {shift: ':'}), ch('\'', {shift: '"'}), enter(2.25)],
-            [shiftBottom(2), ...chars('zxcvb'), gap(), pad(0.75), ...chars('nm,.'), ch('/', {shift: '?'}),
+            [shift('Shift', 2), ...chars('zxcvb'), gap(), pad(0.75), ...chars('nm,.'), ch('/', {shift: '?'}),
                 shift('Shift_R', 2.75)],
             abcBottom(true),
         ];
     }
     return [
         [tab(1.25), ...topRow('qwertyuiop'), ch('-', {shift: '_'}), backspace(2)],
-        [shiftTop(0.75), question(), ...chars('asdfghjkl'), ch(';', {shift: ':'}), ch('\'', {shift: '"'}),
+        [question(1.75), ...chars('asdfghjkl'), ch(';', {shift: ':'}), ch('\'', {shift: '"'}),
             enter(1.5)],
-        [shiftBottom(2.25), ...chars('zxcvbnm,./'), shift('Shift_R', 2)],
+        [shift('Shift', 2.25), ...chars('zxcvbnm,./'), ...shiftRowTail()],
         abcBottom(false),
     ];
 }
