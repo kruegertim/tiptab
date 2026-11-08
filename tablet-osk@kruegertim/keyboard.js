@@ -458,7 +458,7 @@ class OskKey extends St.Widget {
         const glyph = Math.round(h * 0.32);
         const small = Math.max(7, Math.round(h * 0.2));
         const narrow = this.units < 0.8; // compact Esc / ^ (0.5 u), <> and Bild↑ (0.75 u)
-        const padV = Math.round(h * 0.07), padH = Math.round(h * (narrow ? 0.04 : 0.11));
+        const padV = this.heightScale < 1 ? 0 : Math.round(h * 0.07), padH = Math.round(h * (narrow ? 0.04 : 0.11));
         this._padStyle = `padding: ${padV}px ${padH}px;`;
         this._h = h;
         this.applyStyle();
@@ -1323,7 +1323,7 @@ export const OskKeyboard = GObject.registerClass({
                     for (const partDef of def.parts) {
                         const part = new OskKey(partDef, this);
                         part.y_expand = true;
-                        part.heightScale = 0.9; // glyphs nearly full size, padding stays small
+                        part.heightScale = 0.8; // larger glyphs; no vertical padding (see setHeight)
                         box.add_child(part);
                         this._keys.push(part);
                     }
