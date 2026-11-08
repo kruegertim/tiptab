@@ -131,13 +131,30 @@ function topRow(letters) {
 
 // Row stagger like a real keyboard: A row 0.5 u right of the Q row, Y row another 0.5 u
 // (so D sits below between E and R, B below between G and H).
+// Angled left Shift (like a mirrored ISO Enter): a stub left of "?" in the A row
+// reaches down into the wide lower part. Both parts are one logical key.
+function shiftTop(w) {
+    return mod('Shift', '', 'shift', w, {joinPart: 'top', joinGroup: 'shift'});
+}
+
+function shiftBottom(w) {
+    return mod('Shift', '⇧', 'shift', w, {joinPart: 'bottom', joinGroup: 'shift'});
+}
+
+const question = () => ch('?', {shift: '!'});
+
+// ↑ above ↓ in one key slot between ← and →.
+function upDown() {
+    return {id: 'UpDown', w: 1, type: 'stack', parts: [up(), down()]};
+}
+
 function abcBottom(split) {
     if (split) {
         return [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1), settingsKey(1),
-            space('space', 2.25), gap(), space('space_r', 3), left(), up(), down(), right(), hide(1.5)];
+            space('space', 2.25), gap(), space('space_r', 4), left(), upDown(), right(), hide(1.5)];
     }
     return [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1), settingsKey(1),
-        space('space', 4.5), left(), up(), down(), right(), hide(1)];
+        space('space', 5.5), left(), upDown(), right(), hide(1)];
 }
 
 function abcQwertz(split) {
@@ -146,16 +163,16 @@ function abcQwertz(split) {
         const r1 = topRow('qwertzuiopü');
         return [
             [esc(1.25), ...r1.slice(0, 5), pad(0.75), gap(), ...r1.slice(5), backspace(2.5)],
-            [tab(1.5), ...chars('asdfg'), pad(0.5), gap(), pad(0.25), ...chars('hjklöä'), enter(2.25)],
-            [shift('Shift', 2), ...chars('yxcvb'), gap(), pad(0.75), ...chars('nm,.-'), ch('?', {shift: '!'}),
-                shift('Shift_R', 1.75)],
+            [shiftTop(0.5), question(), ...chars('asdfg'), pad(0.5), gap(), pad(0.25), ...chars('hjklöä'),
+                enter(2.25)],
+            [shiftBottom(2), ...chars('yxcvb'), gap(), pad(0.75), ...chars('nm,.-'), shift('Shift_R', 2.75)],
             abcBottom(true),
         ];
     }
     return [
         [tab(1.25), ...topRow('qwertzuiopü'), backspace(2)],
-        [mod('Caps', '⇪', 'caps', 1.75), ...chars('asdfghjklöä'), enter(1.5)],
-        [shift('Shift', 2.25), ...chars('yxcvbnm,.-'), ch('?', {shift: '!'}), shift('Shift_R', 1)],
+        [shiftTop(0.75), question(), ...chars('asdfghjklöä'), enter(1.5)],
+        [shiftBottom(2.25), ...chars('yxcvbnm,.-'), shift('Shift_R', 2)],
         abcBottom(false),
     ];
 }
@@ -165,17 +182,18 @@ function abcQwerty(split) {
         const r1 = topRow('qwertyuiop');
         return [
             [esc(1.25), ...r1.slice(0, 5), pad(0.75), gap(), ...r1.slice(5), ch('-', {shift: '_'}), backspace(2.5)],
-            [tab(1.5), ...chars('asdfg'), pad(0.5), gap(), pad(0.25), ...chars('hjkl'), ch(';', {shift: ':'}),
-                ch('\'', {shift: '"'}), enter(2.25)],
-            [shift('Shift', 2), ...chars('zxcvb'), gap(), pad(0.75), ...chars('nm,.'), ch('/', {shift: '?'}),
-                ch('?', {shift: '!'}), shift('Shift_R', 1.75)],
+            [shiftTop(0.5), question(), ...chars('asdfg'), pad(0.5), gap(), pad(0.25), ...chars('hjkl'),
+                ch(';', {shift: ':'}), ch('\'', {shift: '"'}), enter(2.25)],
+            [shiftBottom(2), ...chars('zxcvb'), gap(), pad(0.75), ...chars('nm,.'), ch('/', {shift: '?'}),
+                shift('Shift_R', 2.75)],
             abcBottom(true),
         ];
     }
     return [
         [tab(1.25), ...topRow('qwertyuiop'), ch('-', {shift: '_'}), backspace(2)],
-        [mod('Caps', '⇪', 'caps', 1.75), ...chars('asdfghjkl'), ch(';', {shift: ':'}), ch('\'', {shift: '"'}), enter(1.5)],
-        [shift('Shift', 2.25), ...chars('zxcvbnm,./'), ch('?', {shift: '!'}), shift('Shift_R', 1)],
+        [shiftTop(0.75), question(), ...chars('asdfghjkl'), ch(';', {shift: ':'}), ch('\'', {shift: '"'}),
+            enter(1.5)],
+        [shiftBottom(2.25), ...chars('zxcvbnm,./'), shift('Shift_R', 2)],
         abcBottom(false),
     ];
 }

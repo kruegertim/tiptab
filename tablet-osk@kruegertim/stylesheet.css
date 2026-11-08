@@ -289,6 +289,15 @@
     background-color: #d1281c;
 }
 
+/* angled Shift in the touch style (rounder corners) */
+.tosk-style-touch .tosk-key.tosk-shift-top {
+    border-radius: 9px 9px 0 0;
+}
+
+.tosk-style-touch .tosk-key.tosk-shift-bottom {
+    border-radius: 0 9px 9px 9px;
+}
+
 /* digit hint top-right (swipe up / long press) and the Strg hint */
 .tosk-label-hint {
     color: #9a9ba3;
