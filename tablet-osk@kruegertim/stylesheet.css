@@ -114,6 +114,14 @@
     border-radius: 0 0 6px 6px;
 }
 
+.tosk-shift-top {
+    border-radius: 6px 6px 0 0;
+}
+
+.tosk-shift-bottom {
+    border-radius: 0 6px 6px 6px;
+}
+
 
 /* keycap glyphs (shift / base / AltGr), all the same size and colour;
  * inactive levels are dimmed via opacity from keyboard.js */
@@ -278,6 +286,15 @@
 
 .tosk-style-touch .tosk-key.tosk-latched {
     background-color: #d1281c;
+}
+
+/* angled Shift in the touch style (rounder corners) */
+.tosk-style-touch .tosk-key.tosk-shift-top {
+    border-radius: 9px 9px 0 0;
+}
+
+.tosk-style-touch .tosk-key.tosk-shift-bottom {
+    border-radius: 0 9px 9px 9px;
 }
 
 /* digit hint top-right (swipe up / long press) and the Strg hint */

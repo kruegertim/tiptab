@@ -187,6 +187,13 @@ class OskKey extends St.Widget {
         // ISO Enter: the lower half reaches up through the row gap to join the upper
         // half. (Extending the upper half down instead would cover the gap above '#'.)
         this.extendUp = def.enterPart === 'bottom';
+        // Angled Shift: the upper stub reaches down into its wider lower part.
+        if (def.joinPart === 'top')
+            this.add_style_class_name('tosk-shift-top');
+        if (def.joinPart === 'bottom')
+            this.add_style_class_name('tosk-shift-bottom');
+        this.extendDown = def.joinPart === 'top';
+        this.heightScale = 1; // < 1: half-height key of a stacked pair (↑/↓)
 
         if (def.emoji)
             this.add_style_class_name('tosk-key-emoji');
@@ -347,6 +354,7 @@ class OskKey extends St.Widget {
     }
 
     setHeight(h) {
+        h = Math.round(h * this.heightScale);
         const big = Math.round(h * 0.4);
         const glyph = Math.round(h * 0.32);
         const small = Math.max(7, Math.round(h * 0.2));
@@ -479,7 +487,8 @@ class KeyRow extends St.Widget {
             cum += child.units;
             const x2 = Math.max(x1, content.x1 + Math.round(cum * unit) - gap);
             const y1 = content.y1 - (child.extendUp ? gap : 0);
-            child.allocate(Clutter.ActorBox.new(x1, y1, x2, content.y2));
+            const y2 = content.y2 + (child.extendDown ? gap : 0);
+            child.allocate(Clutter.ActorBox.new(x1, y1, x2, y2));
         }
     }
 });
@@ -732,7 +741,13 @@ export const OskKeyboard = GObject.registerClass({
 
         for (const k of this._keys)
             k.setHeight(h);
+        this._applyStackSpacing();
         this.queue_relayout();
+    }
+
+    _applyStackSpacing() {
+        for (const box of this._stacks ?? [])
+            box.style = `spacing: ${this._gap}px;`;
     }
 
     get preferredHeight() {
@@ -1100,9 +1115,27 @@ export const OskKeyboard = GObject.registerClass({
         }
 
         const enterParts = [];
+        const joinGroups = {};
+        this._stacks = [];
         for (const rowDef of this._rows) {
             const row = new KeyRow(this);
             for (const def of rowDef) {
+                if (def.type === 'stack') {
+                    // Two half-height keys on top of each other in one slot (↑ above ↓).
+                    const box = new St.BoxLayout({vertical: true, x_expand: true, y_expand: true});
+                    box.layout_manager.homogeneous = true;
+                    box.units = def.w;
+                    for (const partDef of def.parts) {
+                        const part = new OskKey(partDef, this);
+                        part.y_expand = true;
+                        part.heightScale = 0.6;
+                        box.add_child(part);
+                        this._keys.push(part);
+                    }
+                    this._stacks.push(box);
+                    row.add_child(box);
+                    continue;
+                }
                 if (def.type === 'gap') {
                     // Thumb mode: empty, non-reactive middle (touches reach the app).
                     const spacer = new St.Widget({reactive: false});
@@ -1117,6 +1150,8 @@ export const OskKeyboard = GObject.registerClass({
                     (this._modifierKeys[def.modifier] ??= []).push(key); // split: two Shift keys
                 if (def.enterPart)
                     enterParts.push(key);
+                if (def.joinGroup)
+                    (joinGroups[def.joinGroup] ??= []).push(key);
             }
             this._rowsBox.add_child(row);
         }
@@ -1124,6 +1159,13 @@ export const OskKeyboard = GObject.registerClass({
             enterParts[0].twin = enterParts[1];
             enterParts[1].twin = enterParts[0];
         }
+        for (const parts of Object.values(joinGroups)) {
+            if (parts.length === 2) {
+                parts[0].twin = parts[1];
+                parts[1].twin = parts[0];
+            }
+        }
+        this._applyStackSpacing();
 
         for (const k of this._keys)
             k.setHeight(this._keyHeight);
