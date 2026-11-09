@@ -107,6 +107,7 @@ export default class TabletOskExtension extends Extension {
             getKeyboardActor: () => this._container,
             physicalKeyboard: this._physical,
             modalBridge: this._modalBridge,
+            isPinned: () => !!this._panel?.visible,
         });
 
         this._indicator = new PanelIndicator({

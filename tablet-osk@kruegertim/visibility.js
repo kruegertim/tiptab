@@ -274,7 +274,10 @@ class DragRecognizer {
 
 export class VisibilityController {
     constructor({settings, show, hide, isVisible, getHandle, getKeyboardActor, physicalKeyboard,
-        modalBridge = null}) {
+        modalBridge = null, isPinned = null}) {
+        // isPinned(): true while the keyboard must not auto-hide (settings panel open:
+        // apps re-layouting under a changed work area drop their text input briefly).
+        this._isPinned = isPinned;
         this._submitTag = {};
         this._submitId = 0;
         this._settings = settings;
@@ -558,6 +561,10 @@ export class VisibilityController {
         this._mode = mode;
     }
 
+    _pinned() {
+        return !!this._safeCall(this._isPinned);
+    }
+
     _doHide() {
         this._mode = null;
         this._safeCall(this._hide);
@@ -621,7 +628,8 @@ export class VisibilityController {
         } catch {
             text = null;   // entry already disposed
         }
-        if (typeof text === 'string' && text.length === 0 && this._mode === 'auto' && this._isShown()) {
+        if (typeof text === 'string' && text.length === 0 && this._mode === 'auto' && this._isShown() &&
+            !this._pinned()) {
             this._clearSubmit();
             this._cancelTimers();
             this._doHide();
@@ -694,7 +702,7 @@ export class VisibilityController {
             break;
         case Clutter.InputPanelState.TOGGLE: {
             const recent = GLib.get_monotonic_time() / 1000 - this._lastFocusIn < TOGGLE_GRACE_MS;
-            if (this._isShown() && !this._showId && !recent) {
+            if (this._isShown() && !this._showId && !recent && !this._pinned()) {
                 // Explicit user toggle on an already focused field
                 if (this._autoAllowed()) {
                     this._cancelTimers();
@@ -753,7 +761,7 @@ export class VisibilityController {
             this._hideId = 0;
             if (this._wanted())
                 return GLib.SOURCE_REMOVE;
-            if (this._isShown() && this._mode === 'auto')
+            if (this._isShown() && this._mode === 'auto' && !this._pinned())
                 this._doHide();
             return GLib.SOURCE_REMOVE;
         });
@@ -812,7 +820,7 @@ export class VisibilityController {
         this._keyboardActor = null;
 
         this._settings = null;
-        this._show = this._hide = this._isVisible = null;
+        this._show = this._hide = this._isVisible = this._isPinned = null;
         this._getHandle = this._getKeyboardActor = null;
         this._physicalKeyboard = null;
     }
