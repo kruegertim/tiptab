@@ -16,7 +16,6 @@ import {FloatingController} from './floating.js';
 import {DockMover} from './dock.js';
 import {ModalBridge} from './modalBridge.js';
 import {PredictController} from './predictController.js';
-import {SPLIT_TOTAL_UNITS, SPLIT_LEFT_UNITS, SPLIT_GAP_UNITS} from './layouts.js';
 
 const ANIMATION_TIME = 200;
 const MIN_FLOATING_KEY_MM = 6;
@@ -363,9 +362,10 @@ export default class TabletOskExtension extends Extension {
     _layoutThumbHalves(width) {
         const kb = this._keyboard;
         const pad = kb._pad, gap = kb._gap;
-        const unit = (width - 2 * pad + gap) / SPLIT_TOTAL_UNITS;
-        const leftEnd = pad + Math.round(SPLIT_LEFT_UNITS * unit) - gap;
-        const rightStart = pad + Math.round((SPLIT_LEFT_UNITS + SPLIT_GAP_UNITS) * unit);
+        const split = kb.splitGeometry; // classic or (narrower) touch thumb grid
+        const unit = (width - 2 * pad + gap) / split.total;
+        const leftEnd = pad + Math.round(split.left * unit) - gap;
+        const rightStart = pad + Math.round((split.left + split.gap) * unit);
         const [left, right] = this._thumbHalves;
         left.width = leftEnd + pad;
         right.width = width - rightStart + pad;

@@ -21,7 +21,9 @@ import Pango from 'gi://Pango';
 import St from 'gi://St';
 
 import {getLayout, getSplitLayout, TOTAL_UNITS, SPLIT_TOTAL_UNITS, FALLBACK_KEYVALS} from './layouts.js';
-import {getTouchLayout, TOUCH_TOTAL_UNITS, emojiPageCount, upperAlt} from './touchLayouts.js';
+import {getTouchLayout, TOUCH_TOTAL_UNITS, emojiPageCount, upperAlt, TOUCH_SPLIT_TOTAL_UNITS,
+    TOUCH_SPLIT_LEFT_UNITS, TOUCH_SPLIT_GAP_UNITS} from './touchLayouts.js';
+import {SPLIT_LEFT_UNITS, SPLIT_GAP_UNITS} from './layouts.js';
 import {KeyInjector} from './injector.js';
 import {isWaylandCompositor} from './compat.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -781,7 +783,7 @@ export const OskKeyboard = GObject.registerClass({
                     return;
                 this._style = style;
                 this._layer = 'abc';
-                this._rebuild();
+                this._rebuild(); // emits layout-changed: extension re-lays out the thumb halves
             },
             'changed::show-f-row', () => this._rebuild(),
             'changed::label-brightness', () => this._applyContainerStyle(),
@@ -993,8 +995,15 @@ export const OskKeyboard = GObject.registerClass({
 
     get _totalUnits() {
         if (this._thumb)
-            return SPLIT_TOTAL_UNITS;
+            return this.touch ? TOUCH_SPLIT_TOTAL_UNITS : SPLIT_TOTAL_UNITS;
         return this.touch ? TOUCH_TOTAL_UNITS : TOTAL_UNITS;
+    }
+
+    /** Thumb mode grid in units: {total, left, gap} (the right half is the rest). */
+    get splitGeometry() {
+        return this.touch
+            ? {total: TOUCH_SPLIT_TOTAL_UNITS, left: TOUCH_SPLIT_LEFT_UNITS, gap: TOUCH_SPLIT_GAP_UNITS}
+            : {total: SPLIT_TOTAL_UNITS, left: SPLIT_LEFT_UNITS, gap: SPLIT_GAP_UNITS};
     }
 
     get thumb() {
