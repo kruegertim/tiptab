@@ -416,15 +416,15 @@ function emojiRows(cat, page, recent, split) {
 
 // ---------------------------------------------------------------- mini ("T")
 
-// Small square floating panel:   ↑    F11
-//                                ↓    ✕ (back to the previous arrangement)
+// Small square floating panel:   ✕    ↑      (✕: back to the previous arrangement)
+//                                F11  ↓
 //                                Strg Alt ⇧ R   (Strg+Alt+Shift(left)+R as one key)
 export const MINI_TOTAL_UNITS = 2;
 
 export function getMiniLayout() {
     return [
-        [up(), sp('F11', 'F11', 'F11')],
-        [down(), {id: 'ExitMini', w: 1, type: 'special', label: '✕', special: true, action: 'exit-mini'}],
+        [{id: 'ExitMini', w: 1, type: 'special', label: '✕', special: true, action: 'exit-mini'}, up()],
+        [sp('F11', 'F11', 'F11'), down()],
         [sp('ComboCASR', 'Strg Alt ⇧ R', 'r', 2, {combo: ['Control_L', 'Alt_L', 'Shift_L']})],
     ];
 }
