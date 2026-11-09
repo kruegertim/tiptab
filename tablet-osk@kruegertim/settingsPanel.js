@@ -11,6 +11,7 @@ const KEY_HEIGHT_MAX = 20.0;
 const KEY_HEIGHT_STEP = 0.5;
 const OPACITY_MIN = 0.3;
 const OPACITY_MAX = 1.0;
+const DOCKED_WIDTH_MIN = 0.5;
 const KEY_HEIGHT_DEBOUNCE_MS = 150;
 const OPACITY_THROTTLE_MS = 60;
 const BRIGHTNESS_MIN = 0.65;
@@ -128,6 +129,8 @@ export const SettingsPanel = GObject.registerClass({
             mm => this._settings.set_double(this._khKey(), mm));
         this._opWriter = new DelayedWriter(OPACITY_THROTTLE_MS,
             v => this._settings.set_double('floating-opacity', v), {throttle: true});
+        this._dwWriter = new DelayedWriter(OPACITY_THROTTLE_MS,
+            v => this._settings.set_double('docked-width', v), {throttle: true});
         this._brWriter = new DelayedWriter(OPACITY_THROTTLE_MS,
             v => this._settings.set_double('label-brightness', v), {throttle: true});
         this._glowWriter = new DelayedWriter(OPACITY_THROTTLE_MS,
@@ -168,6 +171,7 @@ export const SettingsPanel = GObject.registerClass({
             'changed::move-dock-left', () => this._syncSwitch(this._dockSwitch, 'move-dock-left'),
             'changed::keep-key-aspect', () => this._syncSwitch(this._aspectSwitch, 'keep-key-aspect'),
             'changed::floating-opacity', () => this._syncOpacity(),
+            'changed::docked-width', () => this._syncDockedWidth(),
             'changed::label-brightness', () => this._syncBrightness(),
             'changed::key-glow', () => this._syncGlow(),
             'changed::key-glow-width', () => this._syncGlowWidth(),
@@ -341,6 +345,21 @@ export const SettingsPanel = GObject.registerClass({
         this._aspectSwitch = this._switch('keep-key-aspect');
         r.aspect = this._row('Proportionen beibehalten', this._aspectSwitch);
 
+        // Breite (angedockt)
+        {
+            const {row, valueLabel, slider} = this._sliderRow('Breite (angedockt)', null);
+            this._dwLabel = valueLabel;
+            this._dwSlider = slider;
+            slider.connect('drag-end', () => this._dwWriter.flush());
+            slider.connect('notify::value', () => {
+                const v = this._dwValue();
+                this._dwLabel.text = formatPercent(v);
+                if (!this._syncing)
+                    this._dwWriter.schedule(v);
+            });
+            r.dockedWidth = row;
+        }
+
         // Deckkraft
         {
             const {row, valueLabel, slider} = this._sliderRow('Deckkraft', null);
@@ -494,14 +513,14 @@ export const SettingsPanel = GObject.registerClass({
 
         this._rows = r;
         // single-column order (contract order) and two-column order (left | right)
-        this._order1 = [r.keyHeight, r.aspect, r.mode, r.style, r.fRow, r.layout, r.autoCap, r.shrink, r.auto, r.submit,
+        this._order1 = [r.keyHeight, r.aspect, r.mode, r.style, r.fRow, r.layout, r.autoCap, r.dockedWidth, r.shrink, r.auto, r.submit,
             r.dock, r.opacity, r.brightness, r.glow, r.glowWidth, r.flash, r.letterCase, r.superSym, r.holdRelease,
             r.holdMs, r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict];
         this._order2 = [
             [r.keyHeight, r.aspect, r.layout, r.fRow, r.brightness, r.glow, r.glowWidth, r.flash,
                 r.letterCase, r.auto, r.submit, r.superSym, r.holdRelease,
                 r.holdMs],
-            [r.mode, r.style, r.autoCap, r.shrink, r.opacity, r.dock,
+            [r.mode, r.style, r.autoCap, r.dockedWidth, r.shrink, r.opacity, r.dock,
                 r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict],
         ];
 
@@ -874,6 +893,19 @@ export const SettingsPanel = GObject.registerClass({
         this._glowWLabel.text = `${px} px`;
     }
 
+    _dwValue() {
+        const v = DOCKED_WIDTH_MIN + this._dwSlider.value * (1 - DOCKED_WIDTH_MIN);
+        return Math.round(v * 100) / 100;
+    }
+
+    _syncDockedWidth() {
+        const v = this._settings.get_double('docked-width');
+        this._withSync(() => {
+            this._dwSlider.value = (v - DOCKED_WIDTH_MIN) / (1 - DOCKED_WIDTH_MIN);
+        });
+        this._dwLabel.text = formatPercent(v);
+    }
+
     _opValue() {
         const v = OPACITY_MIN + this._opSlider.value * (OPACITY_MAX - OPACITY_MIN);
         return Math.round(v * 100) / 100;
@@ -970,6 +1002,7 @@ export const SettingsPanel = GObject.registerClass({
         this._syncKeyHeight();
         this._setRowSensitive(this._rows.shrink, this._shrinkSwitch, !floating);
         this._setRowSensitive(this._rows.opacity, this._opSlider, floating);
+        this._setRowSensitive(this._rows.dockedWidth, this._dwSlider, mode === 'docked');
     }
 
     _setRowSensitive(row, control, sensitive) {
@@ -993,6 +1026,7 @@ export const SettingsPanel = GObject.registerClass({
         this._syncSwitch(this._dockSwitch, 'move-dock-left');
         this._syncSwitch(this._aspectSwitch, 'keep-key-aspect');
         this._syncOpacity();
+        this._syncDockedWidth();
         this._syncBrightness();
         this._syncGlow();
         this._syncGlowWidth();
@@ -1011,6 +1045,7 @@ export const SettingsPanel = GObject.registerClass({
     _flushWrites() {
         this._khWriter.flush();
         this._opWriter.flush();
+        this._dwWriter.flush();
         this._brWriter.flush();
         this._glowWriter.flush();
         this._glowWWriter.flush();
@@ -1022,6 +1057,7 @@ export const SettingsPanel = GObject.registerClass({
         this._flushWrites();
         this._khWriter.cancel();
         this._opWriter.cancel();
+        this._dwWriter.cancel();
         this._brWriter.cancel();
         this._glowWriter.cancel();
         this._glowWWriter.cancel();

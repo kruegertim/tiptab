@@ -95,6 +95,11 @@
       <default>'docked'</default>
       <summary>docked = full width at the bottom (may shrink work area); floating = movable, resizable panel</summary>
     </key>
+    <key name="docked-width" type="d">
+      <range min="0.5" max="1.0"/>
+      <default>1.0</default>
+      <summary>Width of the docked keyboard as a fraction of the screen width (0.5–1.0, centred; narrower keys)</summary>
+    </key>
     <key name="floating-opacity" type="d">
       <range min="0.3" max="1.0"/>
       <default>1.0</default>

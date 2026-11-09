@@ -110,6 +110,30 @@ export default class TabletOskPreferences extends ExtensionPreferences {
             'Fenster machen der Tastatur Platz, statt verdeckt zu werden (nur angedockt)');
         modeGroup.add(shrinkRow);
 
+        const widthRow = new Adw.SpinRow({
+            title: 'Breite angedockt (%)',
+            subtitle: 'Gesamtbreite der angedockten Tastatur, zentriert (schmalere Tasten)',
+            digits: 0,
+            adjustment: new Gtk.Adjustment({lower: 50, upper: 100, step_increment: 5, page_increment: 10}),
+        });
+        const syncWidth = () => {
+            const pct = Math.round(settings.get_double('docked-width') * 100);
+            if (widthRow.value !== pct)
+                widthRow.value = pct;
+        };
+        syncWidth();
+        widthRow.connect('notify::value', () => {
+            const v = widthRow.value / 100;
+            if (Math.abs(settings.get_double('docked-width') - v) > 0.001)
+                settings.set_double('docked-width', v);
+        });
+        const widthId = settings.connect('changed::docked-width', syncWidth);
+        window.connect('close-request', () => {
+            settings.disconnect(widthId);
+            return false;
+        });
+        modeGroup.add(widthRow);
+
         const opacityRow = new Adw.SpinRow({
             title: 'Deckkraft (%)',
             subtitle: 'Deckkraft der schwebenden Tastatur',
