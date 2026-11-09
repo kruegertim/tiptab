@@ -172,6 +172,7 @@ export const SettingsPanel = GObject.registerClass({
             'changed::keep-key-aspect', () => this._syncSwitch(this._aspectSwitch, 'keep-key-aspect'),
             'changed::floating-opacity', () => this._syncOpacity(),
             'changed::docked-width', () => this._syncDockedWidth(),
+            'changed::fullscreen-floating', () => this._syncSwitch(this._fsFloatSwitch, 'fullscreen-floating'),
             'changed::keyboard-position', () => this._posSeg.setActive(this._settings.get_string('keyboard-position')),
             'changed::label-brightness', () => this._syncBrightness(),
             'changed::key-glow', () => this._syncGlow(),
@@ -354,6 +355,10 @@ export const SettingsPanel = GObject.registerClass({
             r.position = this._row('Position', seg.actor);
         }
 
+        // Bei Vollbild-Apps schwebend
+        this._fsFloatSwitch = this._switch('fullscreen-floating');
+        r.fsFloat = this._row('Bei Vollbild schwebend', this._fsFloatSwitch);
+
         // Breite (angedockt)
         {
             const {row, valueLabel, slider} = this._sliderRow('Breite (angedockt)', null);
@@ -522,14 +527,14 @@ export const SettingsPanel = GObject.registerClass({
 
         this._rows = r;
         // single-column order (contract order) and two-column order (left | right)
-        this._order1 = [r.keyHeight, r.aspect, r.mode, r.style, r.fRow, r.layout, r.autoCap, r.position, r.dockedWidth, r.shrink, r.auto, r.submit,
+        this._order1 = [r.keyHeight, r.aspect, r.mode, r.style, r.fRow, r.layout, r.autoCap, r.position, r.dockedWidth, r.fsFloat, r.shrink, r.auto, r.submit,
             r.dock, r.opacity, r.brightness, r.glow, r.glowWidth, r.flash, r.letterCase, r.superSym, r.holdRelease,
             r.holdMs, r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict];
         this._order2 = [
             [r.keyHeight, r.aspect, r.layout, r.fRow, r.brightness, r.glow, r.glowWidth, r.flash,
                 r.letterCase, r.auto, r.submit, r.superSym, r.holdRelease,
                 r.holdMs],
-            [r.mode, r.style, r.autoCap, r.position, r.dockedWidth, r.shrink, r.opacity, r.dock,
+            [r.mode, r.style, r.autoCap, r.position, r.dockedWidth, r.fsFloat, r.shrink, r.opacity, r.dock,
                 r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict],
         ];
 
@@ -1037,6 +1042,7 @@ export const SettingsPanel = GObject.registerClass({
         this._syncSwitch(this._aspectSwitch, 'keep-key-aspect');
         this._syncOpacity();
         this._syncDockedWidth();
+        this._syncSwitch(this._fsFloatSwitch, 'fullscreen-floating');
         this._posSeg.setActive(this._settings.get_string('keyboard-position'));
         this._syncBrightness();
         this._syncGlow();

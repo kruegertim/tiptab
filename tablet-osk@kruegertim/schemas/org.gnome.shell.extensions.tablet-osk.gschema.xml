@@ -104,6 +104,10 @@
       <default>'bottom'</default>
       <summary>Docked and thumb mode: keyboard at the bottom or at the top edge (below the top bar)</summary>
     </key>
+    <key name="fullscreen-floating" type="b">
+      <default>true</default>
+      <summary>While an app is fullscreen, show the keyboard floating instead of docked (back to docked afterwards)</summary>
+    </key>
     <key name="docked-width" type="d">
       <range min="0.5" max="1.0"/>
       <default>1.0</default>
