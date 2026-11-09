@@ -94,6 +94,7 @@ export default class TabletOskExtension extends Extension {
             getGrabActor: () => this._keyboard.handle,
             getResizeGrip: () => this._keyboard.resizeGrip,
             onGeometryChanged: ({width}) => this._applyFloatingHeight(width),
+            getFixedWidth: () => this._miniWidth(),
         });
 
         this._physical = new PhysicalKeyboardMonitor(() => {});
@@ -125,6 +126,7 @@ export default class TabletOskExtension extends Extension {
             'changed::show-f-row', () => this._afterRebuild(),
             'changed::layout', () => this._afterRebuild(),
             'changed::mode', () => this._applyMode(),
+            'changed::layout-style', () => this._applyMode(),
             this);
         Main.layoutManager.connectObject('monitors-changed', () => this._relayout(), this);
         // The extension stays enabled on the unlock screen (session-modes) so the password
@@ -233,7 +235,21 @@ export default class TabletOskExtension extends Extension {
     // ---- geometry -----------------------------------------------------------------------
 
     get _isFloating() {
-        return this._settings.get_string('mode') === 'floating';
+        return this._settings.get_string('mode') === 'floating' || this._isMini;
+    }
+
+    // Arrangement "T" (mini): a small panel that is always floating.
+    get _isMini() {
+        return this._settings.get_string('layout-style') === 'mini';
+    }
+
+    // Mini: fixed panel width from the docked key size (6 units of 1.3 key heights).
+    _miniWidth() {
+        if (!this._isMini || !this._keyboard)
+            return 0;
+        const keyPx = this._dockedKeyPx();
+        const pad = this._keyboard._pad ?? 4;
+        return Math.round(6 * keyPx * 1.3 + 2 * pad + 2);
     }
 
     _monitor() {
@@ -277,6 +293,12 @@ export default class TabletOskExtension extends Extension {
         const monitor = this._monitor();
         if (!monitor || !this._keyboard)
             return;
+        if (this._isMini) {
+            // fixed-size panel: keys as high as docked keys
+            this._keyboard.setKeyHeight(this._dockedKeyPx());
+            this._container.height = Math.round(this._keyboard.preferredHeight);
+            return;
+        }
         const minPx = this._metrics.keyHeightPx(Main.layoutManager.primaryIndex, MIN_FLOATING_KEY_MM);
         // Same key aspect ratio as docked: never flatter than at REFERENCE_KEY_MM.
         const dockedPx = Math.max(this._dockedKeyPx(), this._referenceKeyPx());

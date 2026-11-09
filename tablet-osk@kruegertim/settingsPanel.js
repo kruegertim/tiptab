@@ -316,7 +316,7 @@ export const SettingsPanel = GObject.registerClass({
 
         // Tastenanordnung: klassisch (ThinkPad) oder Touch (Windows-11-artig)
         {
-            const seg = this._segmented([['classic', 'Klassisch'], ['touch', 'Touch']],
+            const seg = this._segmented([['classic', 'Klassisch'], ['touch', 'Touch'], ['mini', 'T']],
                 id => this._settings.set_string('layout-style', id));
             this._styleSeg = seg;
             r.style = this._row('Anordnung', seg.actor);

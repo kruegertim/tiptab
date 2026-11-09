@@ -21,7 +21,7 @@ import Pango from 'gi://Pango';
 import St from 'gi://St';
 
 import {getLayout, getSplitLayout, TOTAL_UNITS, SPLIT_TOTAL_UNITS, FALLBACK_KEYVALS} from './layouts.js';
-import {getTouchLayout, TOUCH_TOTAL_UNITS, emojiPageCount, upperAlt, TOUCH_SPLIT_TOTAL_UNITS,
+import {getTouchLayout, getMiniLayout, MINI_TOTAL_UNITS, TOUCH_TOTAL_UNITS, emojiPageCount, upperAlt, TOUCH_SPLIT_TOTAL_UNITS,
     TOUCH_SPLIT_LEFT_UNITS, TOUCH_SPLIT_GAP_UNITS} from './touchLayouts.js';
 import {SPLIT_LEFT_UNITS, SPLIT_GAP_UNITS} from './layouts.js';
 import {KeyInjector} from './injector.js';
@@ -772,7 +772,7 @@ export const OskKeyboard = GObject.registerClass({
 
         this._buildHandle();
         this._buildSuggestionBar();
-        this._bar.visible = this._settings.get_boolean('suggestions');
+        this._bar.visible = this._settings.get_boolean('suggestions') && !this.mini;
         this._rowsBox = new St.BoxLayout({vertical: true, x_expand: true, style_class: 'tosk-rows'});
         this.add_child(this._rowsBox);
         this._buildFooter();
@@ -788,6 +788,8 @@ export const OskKeyboard = GObject.registerClass({
                     return;
                 this._style = style;
                 this._layer = 'abc';
+                this._syncBarVisible(false);
+                this._footer.visible = this._floating && !this.mini;
                 this._rebuild(); // emits layout-changed: extension re-lays out the thumb halves
             },
             'changed::show-f-row', () => this._rebuild(),
@@ -838,7 +840,13 @@ export const OskKeyboard = GObject.registerClass({
     _readStyle() {
         if (!this._hasKey('layout-style'))
             return 'classic';
-        return this._settings.get_string('layout-style') === 'touch' ? 'touch' : 'classic';
+        const v = this._settings.get_string('layout-style');
+        return v === 'touch' || v === 'mini' ? v : 'classic';
+    }
+
+    /** Mini style "T": one row of special keys, always floating, no suggestion bar. */
+    get mini() {
+        return this._style === 'mini';
     }
 
     get touch() {
@@ -959,7 +967,7 @@ export const OskKeyboard = GObject.registerClass({
         let height = bar + this._gap + n * this._keyHeight +
             Math.max(0, n - 1) * this._gap + this._pad;
         if (this._floating)
-            height += 2 * this._gripH + 2 * FLOAT_BORDER_PX;
+            height += (this._footer.visible ? 2 : 1) * this._gripH + 2 * FLOAT_BORDER_PX;
         return height;
     }
 
@@ -1004,6 +1012,8 @@ export const OskKeyboard = GObject.registerClass({
     }
 
     get _totalUnits() {
+        if (this.mini)
+            return MINI_TOTAL_UNITS;
         if (this._thumb)
             return this.touch ? TOUCH_SPLIT_TOTAL_UNITS : SPLIT_TOTAL_UNITS;
         return this.touch ? TOUCH_TOTAL_UNITS : TOTAL_UNITS;
@@ -1055,7 +1065,7 @@ export const OskKeyboard = GObject.registerClass({
         else
             this.remove_style_class_name('tosk-floating');
         this._handle.visible = floating;
-        this._footer.visible = floating;
+        this._footer.visible = floating && !this.mini; // mini: fixed size, no resize grip
         this._applyContainerStyle();
         this.queue_relayout();
     }
@@ -1240,14 +1250,15 @@ export const OskKeyboard = GObject.registerClass({
 
     // Without suggestions the bar goes away entirely and the keyboard (and the
     // reserved work area) gets shorter by its height; autocorrect works without it.
-    _syncBarVisible() {
-        const visible = this._settings.get_boolean('suggestions');
+    _syncBarVisible(emit = true) {
+        const visible = this._settings.get_boolean('suggestions') && !this.mini;
         if (this._bar.visible === visible)
             return;
         this._bar.visible = visible;
         this._applyRowsStyle();
         this.queue_relayout();
-        this.emit('layout-changed');
+        if (emit)
+            this.emit('layout-changed');
     }
 
     _renderSuggestions() {
@@ -1304,7 +1315,9 @@ export const OskKeyboard = GObject.registerClass({
             this.add_style_class_name('tosk-style-touch');
         else
             this.remove_style_class_name('tosk-style-touch');
-        if (this.touch) {
+        if (this.mini) {
+            this._rows = getMiniLayout();
+        } else if (this.touch) {
             const recent = this._recentEmoji();
             if (this._layer === 'emoji') {
                 if (this._emojiCat === 0 && recent.length === 0)
@@ -1924,6 +1937,13 @@ export const OskKeyboard = GObject.registerClass({
         const mods = this._shortcutModifiers();
         const shift = this._modActive('shift');
         const withShift = shift ? [Clutter.KEY_Shift_L, ...mods] : mods;
+
+        if (def.combo) {
+            // Fixed shortcut key (mini style): e.g. Strg+Alt+Shift+R
+            this._injector.tap(resolveKeyval(def.keysym), def.combo.map(resolveKeyval));
+            this.emit('key-sent', 'shortcut');
+            return;
+        }
 
         if (def.action === 'settings') {
             this.emit('settings-request');

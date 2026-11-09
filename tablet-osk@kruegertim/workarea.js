@@ -270,7 +270,8 @@ export class WorkArea {
 
         this._settings.connectObject(
             'changed::shrink-workarea', () => this._sync(),
-            'changed::mode', () => this._sync(), this);
+            'changed::mode', () => this._sync(),
+            'changed::layout-style', () => this._sync(), this);
         this._sync();
     }
 
@@ -298,7 +299,8 @@ export class WorkArea {
         // while shown drops/restores the strut without coordinator help).
         const want = this._shown &&
             this._settings.get_boolean('shrink-workarea') &&
-            this._settings.get_string('mode') !== 'floating';
+            this._settings.get_string('mode') !== 'floating' &&
+            this._settings.get_string('layout-style') !== 'mini'; // "T" is always floating
         if (want === this._strutTracked || !this._strut)
             return;
 
