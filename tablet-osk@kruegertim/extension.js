@@ -98,6 +98,7 @@ export default class TabletOskExtension extends Extension {
             getHandle: () => this._keyboard.handle,
             getKeyboardActor: () => this._container,
             physicalKeyboard: this._physical,
+            isPinned: () => !!this._panel?.visible,
         });
 
         this._indicator = new PanelIndicator({
