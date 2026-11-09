@@ -288,6 +288,24 @@
     background-color: #d1281c;
 }
 
+/* &123 / abc: light blue; Enter: lighter grey */
+.tosk-style-touch .tosk-key.tosk-key-layerswitch {
+    background-color: #8cc8f0;
+    color: #0e2233;
+}
+
+.tosk-style-touch .tosk-key.tosk-key-layerswitch:active {
+    background-color: #b5dcf6;
+}
+
+.tosk-style-touch .tosk-key.tosk-key-enter {
+    background-color: #606168;
+}
+
+.tosk-style-touch .tosk-key.tosk-key-enter:active {
+    background-color: #7a7b82;
+}
+
 /* angled Shift in the touch style (rounder corners) */
 .tosk-style-touch .tosk-key.tosk-shift-top {
     border-radius: 9px 9px 0 0;

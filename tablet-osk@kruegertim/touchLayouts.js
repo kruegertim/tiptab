@@ -162,12 +162,12 @@ function abcBottom(split) {
     // No hide key here: swipe down hides the keyboard. Arrows as an inverted T: ↑ sits in
     // the Shift row above ↓ (see shiftRowTail()).
     return [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1),
-        space('space', 6.5), settingsKey(1), left(), down(), right()];
+        space('space', 6.25), settingsKey(1), left(), down(), {...right(), w: 1.25}];
 }
 
-// Right end of the Shift row (docked): ↑ above ↓, then a 1 u right Shift.
+// Right end of the Shift row (docked): ↑ above ↓, then the right Shift.
 function shiftRowTail() {
-    return [up(), shift('Shift_R', 1)];
+    return [up(), shift('Shift_R', 1.25)];
 }
 
 function abcQwertz(split) {
@@ -182,9 +182,9 @@ function abcQwertz(split) {
         ];
     }
     return [
-        [tab(1.25), ...topRow('qwertzuiopü'), backspace(2)],
-        [question(1.75), ...chars('asdfghjklöä'), enter(1.5)],
-        [shift('Shift', 2.25), ...chars('yxcvbnm,.-'), ...shiftRowTail()],
+        [tab(1), ...topRow('qwertzuiopü'), backspace(2.25)],
+        [question(1.5), ...chars('asdfghjklöä'), enter(1.75)],
+        [shift('Shift', 2), ...chars('yxcvbnm,.-'), ...shiftRowTail()],
         abcBottom(false),
     ];
 }
@@ -202,10 +202,10 @@ function abcQwerty(split) {
         ];
     }
     return [
-        [tab(1.25), ...topRow('qwertyuiop'), ch('-', {shift: '_'}), backspace(2)],
-        [question(1.75), ...chars('asdfghjkl'), ch(';', {shift: ':'}), ch('\'', {shift: '"'}),
-            enter(1.5)],
-        [shift('Shift', 2.25), ...chars('zxcvbnm,./'), ...shiftRowTail()],
+        [tab(1), ...topRow('qwertyuiop'), ch('-', {shift: '_'}), backspace(2.25)],
+        [question(1.5), ...chars('asdfghjkl'), ch(';', {shift: ':'}), ch('\'', {shift: '"'}),
+            enter(1.75)],
+        [shift('Shift', 2), ...chars('zxcvbnm,./'), ...shiftRowTail()],
         abcBottom(false),
     ];
 }

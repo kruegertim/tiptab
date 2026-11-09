@@ -201,6 +201,10 @@ class OskKey extends St.Widget {
             this.add_style_class_name('tosk-key-emoji');
         if (def.type === 'layer')
             this.add_style_class_name('tosk-key-layer');
+        if (def.id === 'SymLayer' || def.id === 'AbcLayer')
+            this.add_style_class_name('tosk-key-layerswitch');
+        if (def.type === 'enter')
+            this.add_style_class_name('tosk-key-enter');
         if (def.disabled) {
             this.add_style_class_name('tosk-key-disabled');
             this.opacity = 90; // St CSS has no opacity property
