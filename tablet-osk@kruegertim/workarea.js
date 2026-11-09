@@ -253,10 +253,18 @@ export class WorkArea {
             reactive: false,
             opacity: 0,
         });
-        this._strut.add_constraint(new Clutter.BindConstraint({
-            source: actor,
-            coordinate: Clutter.BindCoordinate.ALL, // position + size
-        }));
+        // Position + size of the container. At the top edge (below the top bar) the proxy
+        // is stretched up to the monitor edge: the shell only turns actors that touch a
+        // screen edge into struts.
+        const bind = coordinate => {
+            const c = new Clutter.BindConstraint({source: actor, coordinate});
+            this._strut.add_constraint(c);
+            return c;
+        };
+        bind(Clutter.BindCoordinate.X);
+        bind(Clutter.BindCoordinate.WIDTH);
+        this._bindY = bind(Clutter.BindCoordinate.Y);
+        this._bindH = bind(Clutter.BindCoordinate.HEIGHT);
         // Sibling directly above the container so it is allocated after it.
         Main.layoutManager.uiGroup.insert_child_above(this._strut, actor);
 
@@ -274,6 +282,15 @@ export class WorkArea {
     setShown(shown) {
         this._shown = !!shown;
         this._sync();
+    }
+
+    /** Keyboard docked at the top: px between the monitor's top edge and the keyboard. */
+    setTopOffset(px) {
+        px = Math.max(0, Math.round(px));
+        if (!this._bindY || this._bindY.offset === -px)
+            return;
+        this._bindY.offset = -px;
+        this._bindH.offset = px;
     }
 
     _sync() {
@@ -306,6 +323,7 @@ export class WorkArea {
             this._strutTracked = false;
             this._strut.destroy();
             this._strut = null;
+            this._bindY = this._bindH = null;
         }
 
         if (this._actor && this._actor.get_parent() === Main.layoutManager.uiGroup)

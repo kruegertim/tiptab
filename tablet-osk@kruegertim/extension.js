@@ -65,7 +65,7 @@ export default class TabletOskExtension extends Extension {
             'key-sent', (_k, name) => this._visibility?.onKeySent(name),
             'swipe-progress', (_k, dy) => {
                 if (this._visible && this._container)
-                    this._container.translation_y = Math.max(0, dy);
+                    this._container.translation_y = this._atTop ? -Math.max(0, dy) : Math.max(0, dy);
             },
             'swipe-cancel', () => {
                 this._container?.ease({
@@ -110,6 +110,7 @@ export default class TabletOskExtension extends Extension {
             'changed::key-height-mm', () => this._relayout(),
             'changed::keep-key-aspect', () => this._relayout(),
             'changed::docked-width', () => this._relayout(),
+            'changed::keyboard-position', () => this._relayout(),
             'changed::thumb-key-height-mm', () => this._relayout(),
             'changed::show-f-row', () => this._afterRebuild(),
             'changed::layout', () => this._afterRebuild(),
@@ -240,7 +241,7 @@ export default class TabletOskExtension extends Extension {
             this._floating.enable();
         } else {
             this._floating.disable();
-            if (this._visible)
+            if (this._visible && !this._atTop)
                 this._dockMover.moveAway();
         }
         // WorkArea watches 'mode' itself and drops the strut while floating.
@@ -260,6 +261,27 @@ export default class TabletOskExtension extends Extension {
         const keyPx = Math.max(minPx, Math.round(dockedPx * width / monitor.width));
         this._keyboard.setKeyHeight(keyPx);
         this._container.height = Math.round(this._keyboard.preferredHeight);
+    }
+
+    get _atTop() {
+        return !this._isFloating && this._settings.get_string('keyboard-position') === 'top';
+    }
+
+    // Height of the top bar if it is on this monitor (the keyboard docks below it).
+    _topBarOffset(monitor) {
+        const panelBox = Main.layoutManager.panelBox;
+        if (!panelBox?.visible || monitor.index !== Main.layoutManager.primaryIndex)
+            return 0;
+        return Math.max(0, Math.round(panelBox.y + panelBox.height - monitor.y));
+    }
+
+    // translation_y that moves the docked keyboard just off screen.
+    _hiddenTranslation() {
+        const c = this._container;
+        if (!this._atTop)
+            return c.height;
+        const monitor = this._monitor();
+        return -(c.height + (monitor ? c.y - monitor.y : 0));
     }
 
     _relayout() {
@@ -312,11 +334,17 @@ export default class TabletOskExtension extends Extension {
         const height = Math.min(Math.round(this._keyboard.preferredHeight),
             Math.round(monitor.height * 0.6));
         this._container.set_size(monitor.width, height);
-        this._container.set_position(monitor.x, monitor.y + monitor.height - height);
+        // Bottom edge, or top edge below the top bar (keyboard-position).
+        const top = this._atTop;
+        const topOffset = top ? this._topBarOffset(monitor) : 0;
+        this._container.set_position(monitor.x,
+            top ? monitor.y + topOffset : monitor.y + monitor.height - height);
+        this._workArea.setTopOffset(topOffset);
+        this._keyboard.setSwipeDirection(top ? -1 : 1);
         if (thumb)
             this._layoutThumbHalves(monitor.width);
         if (!this._visible)
-            this._container.translation_y = height;
+            this._container.translation_y = this._hiddenTranslation();
     }
 
     // Thumb mode: background panels behind the two halves (visual only; the keyboard
@@ -429,8 +457,9 @@ export default class TabletOskExtension extends Extension {
             return;
         }
 
-        c.translation_y = c.height;
-        this._dockMover.moveAway();
+        c.translation_y = this._hiddenTranslation();
+        if (!this._atTop) // a bottom dock would be covered; at the top it can stay
+            this._dockMover.moveAway();
         c.show();
         this._raise();
         this._workArea.setShown(true);
@@ -472,7 +501,7 @@ export default class TabletOskExtension extends Extension {
         }
 
         c.ease({
-            translation_y: c.height,
+            translation_y: this._hiddenTranslation(),
             duration: ANIMATION_TIME,
             mode: Clutter.AnimationMode.EASE_IN_QUAD,
             onStopped: done,
