@@ -17,6 +17,8 @@ import {DockMover} from './dock.js';
 import {ModalBridge} from './modalBridge.js';
 import {PredictController} from './predictController.js';
 
+const FULLSCREEN_SETTLE_MS = 400;    // fullscreen state must be stable this long
+const FULLSCREEN_COOLDOWN_MS = 1500; // minimum time between two automatic mode switches
 const ANIMATION_TIME = 200;
 const MIN_FLOATING_KEY_MM = 6;
 // Key aspect ratio reference: at this key height the docked keyboard spans the full
@@ -129,12 +131,13 @@ export default class TabletOskExtension extends Extension {
             'changed::layout-style', () => this._applyMode(),
             'changed::fullscreen-floating', () => this._applyMode(),
             this);
-        // Fullscreen apps: switch to floating and back (see _fullscreenFloating).
-        global.display.connectObject('in-fullscreen-changed', () => {
-            const floating = this._isFloating;
-            if (floating !== this._keyboard?.floating)
-                this._applyMode();
-        }, this);
+        // Fullscreen apps: switch to floating and back (see _fullscreenFloating). The
+        // state is debounced and cached: moving the dock or re-layouting can make the
+        // shell report fullscreen changes for a moment, which must not flip the mode.
+        this._fsActive = this._liveFullscreen();
+        this._fsLastSwitch = 0;
+        this._fsTimerId = 0;
+        global.display.connectObject('in-fullscreen-changed', () => this._scheduleFullscreenCheck(), this);
         Main.layoutManager.connectObject('monitors-changed', () => this._relayout(), this);
         // The extension stays enabled on the unlock screen (session-modes) so the password
         // can be typed there. Hide when the screen locks; the password entry of the
@@ -158,6 +161,10 @@ export default class TabletOskExtension extends Extension {
         if (this._relayoutId) {
             GLib.source_remove(this._relayoutId);
             this._relayoutId = 0;
+        }
+        if (this._fsTimerId) {
+            GLib.source_remove(this._fsTimerId);
+            this._fsTimerId = 0;
         }
 
         this._predict?.destroy();
@@ -250,13 +257,39 @@ export default class TabletOskExtension extends Extension {
     // An app is fullscreen on the keyboard's monitor: float instead of docking (a docked
     // keyboard would cover the bottom of the fullscreen app; struts do not apply to it).
     get _fullscreenFloating() {
-        if (!this._settings.get_boolean('fullscreen-floating'))
-            return false;
+        return !!this._fsActive && this._settings.get_boolean('fullscreen-floating');
+    }
+
+    _liveFullscreen() {
         try {
             return !!this._monitor()?.inFullscreen;
         } catch {
             return false;
         }
+    }
+
+    _scheduleFullscreenCheck(delay = FULLSCREEN_SETTLE_MS) {
+        if (this._fsTimerId)
+            GLib.source_remove(this._fsTimerId);
+        this._fsTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
+            this._fsTimerId = 0;
+            const live = this._liveFullscreen();
+            if (live === this._fsActive)
+                return GLib.SOURCE_REMOVE;
+            const sinceMs = GLib.get_monotonic_time() / 1000 - this._fsLastSwitch;
+            if (sinceMs < FULLSCREEN_COOLDOWN_MS) {
+                // switched a moment ago: look again later instead of flipping back and forth
+                this._scheduleFullscreenCheck(Math.ceil(FULLSCREEN_COOLDOWN_MS - sinceMs) + 50);
+                return GLib.SOURCE_REMOVE;
+            }
+            this._fsActive = live;
+            this._fsLastSwitch = GLib.get_monotonic_time() / 1000;
+            console.log(`[tablet-osk] fullscreen ${live ? 'on' : 'off'} → ` +
+                `${this._isFloating ? 'floating' : 'docked'}`);
+            if (this._isFloating !== this._keyboard?.floating)
+                this._applyMode();
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     // Arrangement "T" (mini): a small panel that is always floating.
@@ -294,7 +327,10 @@ export default class TabletOskExtension extends Extension {
         const floating = this._isFloating;
         this._keyboard.setFloating(floating);
         if (floating) {
-            this._dockMover.restore();
+            // Floating only because of a fullscreen app: leave the dock where it is
+            // (moving it re-creates the dock, which re-triggers fullscreen changes).
+            if (!this._fullscreenFloating)
+                this._dockMover.restore();
             this._container.translation_y = 0;
             this._floating.enable();
         } else {
