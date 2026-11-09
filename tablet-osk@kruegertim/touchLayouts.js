@@ -419,7 +419,7 @@ function emojiRows(cat, page, recent, split) {
 // Small square floating panel:   ✕    ↑      (✕: back to the previous arrangement)
 //                                F11  ↓
 //                                Strg Alt ⇧ R   (Strg+Alt+Shift(left)+R as one key)
-//                                Strg T
+//                                Strg Tab
 export const MINI_TOTAL_UNITS = 2;
 
 export function getMiniLayout() {
@@ -427,7 +427,7 @@ export function getMiniLayout() {
         [{id: 'ExitMini', w: 1, type: 'special', label: '✕', special: true, action: 'exit-mini'}, up()],
         [sp('F11', 'F11', 'F11'), down()],
         [sp('ComboCASR', 'Strg Alt ⇧ R', 'r', 2, {combo: ['Control_L', 'Alt_L', 'Shift_L']})],
-        [sp('ComboCT', 'Strg T', 't', 2, {combo: ['Control_L']})],
+        [sp('ComboCTab', 'Strg ⇥', 'Tab', 2, {combo: ['Control_L']})],
     ];
 }
 
