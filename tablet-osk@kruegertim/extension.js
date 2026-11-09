@@ -109,6 +109,7 @@ export default class TabletOskExtension extends Extension {
         this._settings.connectObject(
             'changed::key-height-mm', () => this._relayout(),
             'changed::keep-key-aspect', () => this._relayout(),
+            'changed::docked-width', () => this._relayout(),
             'changed::thumb-key-height-mm', () => this._relayout(),
             'changed::show-f-row', () => this._afterRebuild(),
             'changed::layout', () => this._afterRebuild(),
@@ -302,7 +303,11 @@ export default class TabletOskExtension extends Extension {
         this._keyboard.x_align = Clutter.ActorAlign.FILL;
         if (!thumb)
             this._keyboard.setPickSpans(null);
-        const kbW = keyPx < refPx ? Math.round(monitor.width * keyPx / refPx) : monitor.width;
+        let kbW = keyPx < refPx ? Math.round(monitor.width * keyPx / refPx) : monitor.width;
+        // Docked width setting (fraction of the screen): narrower keys, centred.
+        const widthFrac = Math.min(1, Math.max(0.5, this._settings.get_double('docked-width')));
+        if (!thumb)
+            kbW = Math.min(kbW, Math.round(monitor.width * widthFrac));
         this._keyboard.setSideInset((monitor.width - kbW) / 2);
         const height = Math.min(Math.round(this._keyboard.preferredHeight),
             Math.round(monitor.height * 0.6));
