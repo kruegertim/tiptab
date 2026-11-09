@@ -265,6 +265,11 @@ export default class TabletOskExtension extends Extension {
         // The handle getter is null when docked, the grab bar when floating.
         this._visibility?.rebindHandle();
         this._floating.rebind();
+        // Arrangement "T" stays on screen permanently.
+        if (this._isMini && !this._visible) {
+            this._show();
+            this._visibility?.notifyVisibleChanged();
+        }
     }
 
     _applyFloatingHeight(width) {
@@ -499,6 +504,11 @@ export default class TabletOskExtension extends Extension {
     _hide() {
         if (!this._container || !this._visible)
             return;
+        if (this._isMini) {
+            // "T" is permanently shown (auto-hide, swipe, toggle are ignored); undo a swipe offset.
+            this._container.ease({translation_y: 0, duration: 120, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
+            return;
+        }
         this._visible = false;
         this._keyboard.resetModifiers();
         this._setPanelVisible(false);
