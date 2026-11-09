@@ -617,6 +617,9 @@ export const OskKeyboard = GObject.registerClass({
                 const style = this._readStyle();
                 if (style === this._style)
                     return;
+                // remember where the ✕ key of arrangement T returns to
+                if (style === 'mini' && this._hasKey('previous-layout-style'))
+                    this._settings.set_string('previous-layout-style', this._style);
                 this._style = style;
                 this._layer = 'abc';
                 this._syncBarVisible(false);
@@ -1741,6 +1744,15 @@ export const OskKeyboard = GObject.registerClass({
             // Fixed shortcut key (mini style): e.g. Strg+Alt+Shift+R
             this._injector.tap(resolveKeyval(def.keysym), def.combo.map(resolveKeyval));
             this.emit('key-sent', 'shortcut');
+            return;
+        }
+
+        if (def.action === 'exit-mini') {
+            let prev = this._hasKey('previous-layout-style')
+                ? this._settings.get_string('previous-layout-style') : 'touch';
+            if (prev !== 'classic' && prev !== 'touch')
+                prev = 'touch';
+            this._settings.set_string('layout-style', prev);
             return;
         }
 
