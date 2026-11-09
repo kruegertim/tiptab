@@ -116,6 +116,9 @@ export default class TabletOskPreferences extends ExtensionPreferences {
             ['top', 'Oben (unter der oberen Leiste)'],
         ], 'Angedockt und Daumen-Modus'));
 
+        modeGroup.add(switchRow(settings, 'fullscreen-floating', 'Bei Vollbild schwebend',
+            'Ist eine App im Vollbild, erscheint die Tastatur schwebend statt angedockt (danach wieder angedockt)'));
+
         const widthRow = new Adw.SpinRow({
             title: 'Breite angedockt (%)',
             subtitle: 'Gesamtbreite der angedockten Tastatur, zentriert (schmalere Tasten)',

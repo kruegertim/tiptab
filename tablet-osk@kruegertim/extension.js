@@ -118,13 +118,22 @@ export default class TabletOskExtension extends Extension {
             'changed::layout', () => this._afterRebuild(),
             'changed::mode', () => this._applyMode(),
             'changed::layout-style', () => this._applyMode(),
+            'changed::fullscreen-floating', () => this._applyMode(),
             this);
+        // Fullscreen apps: switch to floating and back (see _fullscreenFloating).
+        global.display.connectObject('in-fullscreen-changed', () => {
+            const floating = this._isFloating;
+            if (floating !== this._keyboard?.floating)
+                this._applyMode();
+        }, this);
         Main.layoutManager.connectObject('monitors-changed', () => this._relayout(), this);
 
         this._applyMode();
     }
 
     disable() {
+        this._setUnredirectBlocked(false);
+        global.display.disconnectObject(this);
         this._settings?.disconnectObject(this);
         Main.layoutManager.disconnectObject(this);
         if (this._relayoutId) {
@@ -214,7 +223,19 @@ export default class TabletOskExtension extends Extension {
     // ---- geometry -----------------------------------------------------------------------
 
     get _isFloating() {
-        return this._settings.get_string('mode') === 'floating' || this._isMini;
+        return this._settings.get_string('mode') === 'floating' || this._isMini || this._fullscreenFloating;
+    }
+
+    // An app is fullscreen on the keyboard's monitor: float instead of docking (a docked
+    // keyboard would cover the bottom of the fullscreen app; struts do not apply to it).
+    get _fullscreenFloating() {
+        if (!this._settings.get_boolean('fullscreen-floating'))
+            return false;
+        try {
+            return !!this._monitor()?.inFullscreen;
+        } catch {
+            return false;
+        }
     }
 
     // Arrangement "T" (mini): a small panel that is always floating.
@@ -463,10 +484,24 @@ export default class TabletOskExtension extends Extension {
             parent.set_child_above_sibling(this._container, null);
     }
 
+    // A fullscreen window is scanned out directly (unredirected); the shell's chrome,
+    // including the keyboard, is then not painted. Like the built-in OSK, keep the
+    // compositor painting while the keyboard is on screen.
+    _setUnredirectBlocked(blocked) {
+        if (!!this._unredirectBlocked === blocked)
+            return;
+        this._unredirectBlocked = blocked;
+        if (blocked)
+            global.compositor.disable_unredirect();
+        else
+            global.compositor.enable_unredirect();
+    }
+
     _show() {
         if (!this._container || this._visible)
             return;
         this._visible = true;
+        this._setUnredirectBlocked(true);
         this._relayout();
         const c = this._container;
         c.remove_all_transitions();
@@ -519,6 +554,7 @@ export default class TabletOskExtension extends Extension {
         const done = () => {
             if (this._visible || !this._container)
                 return;
+            this._setUnredirectBlocked(false);
             c.hide();
             this._workArea.setShown(false);
             this._dockMover?.restore();
