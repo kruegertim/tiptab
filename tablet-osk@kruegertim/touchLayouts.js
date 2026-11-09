@@ -22,7 +22,13 @@
 //   pageLabel     page indicator key of the symbol layers
 
 export const TOUCH_TOTAL_UNITS = 14.25;
-const SPLIT_GAP_UNITS = 7; // must match layouts.js
+// Thumb mode in the touch style: the halves are 75 % as wide as in the classic split
+// (same 7 u + 8.5 u halves, narrower keys), so the grid is 22.5 / 0.75 = 30 u and the
+// free middle grows to 14.5 u.
+export const TOUCH_SPLIT_TOTAL_UNITS = 30;
+export const TOUCH_SPLIT_LEFT_UNITS = 7;
+export const TOUCH_SPLIT_GAP_UNITS = 14.5;
+const SPLIT_GAP_UNITS = TOUCH_SPLIT_GAP_UNITS;
 
 // ---------------------------------------------------------------- alternatives
 
