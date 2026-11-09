@@ -47,6 +47,11 @@
     border-radius: 14px 14px 0 0;
 }
 
+/* keyboard docked at the top edge: rounded corners at the bottom */
+.tosk-container-top .tosk-thumb-half {
+    border-radius: 0 0 14px 14px;
+}
+
 .tosk-keyboard.tosk-thumb .tosk-suggest-bar {
     background-color: #262628;
     border-radius: 10px;
@@ -112,6 +117,14 @@
 
 .tosk-enter-bottom {
     border-radius: 0 0 6px 6px;
+}
+
+.tosk-shift-top {
+    border-radius: 6px 6px 0 0;
+}
+
+.tosk-shift-bottom {
+    border-radius: 0 6px 6px 6px;
 }
 
 
@@ -229,3 +242,107 @@
 }
 
 .tosk-settings-scroll { background-color: transparent; }
+
+/* ---- Touch style (4 rows, layers; inspired by the Windows 11 touch keyboard) ----
+ * Softer, rounder keys on a lighter grey; letters regular weight, lower case. */
+.tosk-keyboard.tosk-style-touch {
+    background-color: #202124;
+}
+
+.tosk-keyboard.tosk-style-touch.tosk-thumb {
+    background-color: transparent;
+}
+
+.tosk-keyboard.tosk-style-touch StLabel {
+    font-weight: normal !important;
+}
+
+.tosk-style-touch .tosk-key {
+    background-color: #3b3c41;
+    border-radius: 9px;
+}
+
+.tosk-style-touch .tosk-key-special,
+.tosk-style-touch .tosk-key-layer {
+    background-color: #2c2d31;
+}
+
+.tosk-style-touch .tosk-key:active,
+.tosk-style-touch .tosk-key-special:active {
+    background-color: #5a5b62;
+}
+
+.tosk-style-touch .tosk-key-space {
+    background-color: #45464c;
+}
+
+.tosk-style-touch .tosk-key-emoji {
+    background-color: transparent;
+}
+
+.tosk-style-touch .tosk-key-emoji:active {
+    background-color: #45464c;
+}
+
+.tosk-style-touch .tosk-key-current {
+    box-shadow: inset 0 -3px 0 0 #d1281c;
+}
+
+
+.tosk-style-touch .tosk-key.tosk-latched {
+    background-color: #d1281c;
+}
+
+/* &123 / abc: light blue; Enter: lighter grey */
+.tosk-style-touch .tosk-key.tosk-key-layerswitch {
+    background-color: #8cc8f0;
+    color: #0e2233;
+}
+
+.tosk-style-touch .tosk-key.tosk-key-layerswitch:active {
+    background-color: #b5dcf6;
+}
+
+.tosk-style-touch .tosk-key.tosk-key-enter {
+    background-color: #606168;
+}
+
+.tosk-style-touch .tosk-key.tosk-key-enter:active {
+    background-color: #7a7b82;
+}
+
+/* angled Shift in the touch style (rounder corners) */
+.tosk-style-touch .tosk-key.tosk-shift-top {
+    border-radius: 9px 9px 0 0;
+}
+
+.tosk-style-touch .tosk-key.tosk-shift-bottom {
+    border-radius: 0 9px 9px 9px;
+}
+
+/* digit hint top-right (swipe up / long press) and the Strg hint */
+.tosk-label-hint {
+    color: #9a9ba3;
+}
+
+.tosk-label-ctrl {
+    color: #ff8a80;
+}
+
+/* long-press popup with alternatives */
+.tosk-alt-popup {
+    background-color: #2c2d31;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 4px 14px 0 rgba(0, 0, 0, 0.5);
+    font-family: Liberation Sans, Nimbus Sans, Noto Sans, sans-serif;
+    color: #f5f5f5;
+}
+
+.tosk-alt-cell {
+    background-color: #3b3c41;
+}
+
+.tosk-alt-cell:selected {
+    background-color: #d1281c;
+    color: #ffffff;
+}

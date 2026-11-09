@@ -11,6 +11,7 @@ const KEY_HEIGHT_MAX = 20.0;
 const KEY_HEIGHT_STEP = 0.5;
 const OPACITY_MIN = 0.3;
 const OPACITY_MAX = 1.0;
+const DOCKED_WIDTH_MIN = 0.5;
 const KEY_HEIGHT_DEBOUNCE_MS = 150;
 const OPACITY_THROTTLE_MS = 60;
 const BRIGHTNESS_MIN = 0.65;
@@ -116,6 +117,8 @@ export const SettingsPanel = GObject.registerClass({
             mm => this._settings.set_double(this._khKey(), mm));
         this._opWriter = new DelayedWriter(OPACITY_THROTTLE_MS,
             v => this._settings.set_double('floating-opacity', v), {throttle: true});
+        this._dwWriter = new DelayedWriter(OPACITY_THROTTLE_MS,
+            v => this._settings.set_double('docked-width', v), {throttle: true});
         this._brWriter = new DelayedWriter(OPACITY_THROTTLE_MS,
             v => this._settings.set_double('label-brightness', v), {throttle: true});
         this._holdWriter = new DelayedWriter(HOLD_DEBOUNCE_MS,
@@ -142,12 +145,17 @@ export const SettingsPanel = GObject.registerClass({
             'changed::mode', () => this._syncMode(),
             'changed::show-f-row', () => this._syncSwitch(this._fRowSwitch, 'show-f-row'),
             'changed::layout', () => this._syncLayout(),
+            'changed::layout-style', () => this._syncLayout(),
+            'changed::auto-capitalize', () => this._syncSwitch(this._autoCapSwitch, 'auto-capitalize'),
             'changed::shrink-workarea', () => this._syncSwitch(this._shrinkSwitch, 'shrink-workarea'),
             'changed::auto-show', () => this._syncSwitch(this._autoSwitch, 'auto-show'),
             'changed::hide-after-submit', () => this._syncSwitch(this._submitSwitch, 'hide-after-submit'),
             'changed::move-dock-left', () => this._syncSwitch(this._dockSwitch, 'move-dock-left'),
             'changed::keep-key-aspect', () => this._syncSwitch(this._aspectSwitch, 'keep-key-aspect'),
             'changed::floating-opacity', () => this._syncOpacity(),
+            'changed::docked-width', () => this._syncDockedWidth(),
+            'changed::fullscreen-floating', () => this._syncSwitch(this._fsFloatSwitch, 'fullscreen-floating'),
+            'changed::keyboard-position', () => this._posSeg.setActive(this._settings.get_string('keyboard-position')),
             'changed::label-brightness', () => this._syncBrightness(),
             'changed::suggestion-bar-position',
             () => this._barPosSeg.setActive(this._settings.get_string('suggestion-bar-position')),
@@ -285,6 +293,18 @@ export const SettingsPanel = GObject.registerClass({
             r.layout = this._row('Layout', seg.actor);
         }
 
+        // Tastenanordnung: klassisch (ThinkPad) oder Touch (Windows-11-artig)
+        {
+            const seg = this._segmented([['classic', 'Klassisch'], ['touch', 'Touch'], ['mini', 'T']],
+                id => this._settings.set_string('layout-style', id));
+            this._styleSeg = seg;
+            r.style = this._row('Anordnung', seg.actor);
+        }
+
+        // Satzanfang groß (nur Touch)
+        this._autoCapSwitch = this._switch('auto-capitalize');
+        r.autoCap = this._row('Satzanfang groß', this._autoCapSwitch);
+
         // Inhalt verkleinern
         this._shrinkSwitch = this._switch('shrink-workarea');
         r.shrink = this._row('Inhalt verkleinern', this._shrinkSwitch);
@@ -304,6 +324,33 @@ export const SettingsPanel = GObject.registerClass({
         // Proportionen beibehalten (unter 13 mm schmalere Tastatur statt flacherer Tasten)
         this._aspectSwitch = this._switch('keep-key-aspect');
         r.aspect = this._row('Proportionen beibehalten', this._aspectSwitch);
+
+        // Position: unten / oben (angedockt und Daumen)
+        {
+            const seg = this._segmented([['bottom', 'Unten'], ['top', 'Oben']],
+                id => this._settings.set_string('keyboard-position', id));
+            this._posSeg = seg;
+            r.position = this._row('Position', seg.actor);
+        }
+
+        // Bei Vollbild-Apps schwebend
+        this._fsFloatSwitch = this._switch('fullscreen-floating');
+        r.fsFloat = this._row('Bei Vollbild schwebend', this._fsFloatSwitch);
+
+        // Breite (angedockt)
+        {
+            const {row, valueLabel, slider} = this._sliderRow('Breite (angedockt)', null);
+            this._dwLabel = valueLabel;
+            this._dwSlider = slider;
+            slider.connect('drag-end', () => this._dwWriter.flush());
+            slider.connect('notify::value', () => {
+                const v = this._dwValue();
+                this._dwLabel.text = formatPercent(v);
+                if (!this._syncing)
+                    this._dwWriter.schedule(v);
+            });
+            r.dockedWidth = row;
+        }
 
         // Deckkraft
         {
@@ -405,13 +452,13 @@ export const SettingsPanel = GObject.registerClass({
 
         this._rows = r;
         // single-column order (contract order) and two-column order (left | right)
-        this._order1 = [r.keyHeight, r.aspect, r.mode, r.fRow, r.layout, r.shrink, r.auto, r.submit, r.dock, r.opacity,
+        this._order1 = [r.keyHeight, r.aspect, r.mode, r.style, r.fRow, r.layout, r.autoCap, r.position, r.dockedWidth, r.fsFloat, r.shrink, r.auto, r.submit, r.dock, r.opacity,
             r.brightness, r.superSym, r.holdRelease, r.holdMs,
             r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict];
         this._order2 = [
-            [r.keyHeight, r.aspect, r.layout, r.fRow, r.brightness, r.auto, r.submit, r.superSym, r.holdRelease,
+            [r.keyHeight, r.aspect, r.style, r.layout, r.fRow, r.autoCap, r.brightness, r.auto, r.submit, r.superSym, r.holdRelease,
                 r.holdMs],
-            [r.mode, r.shrink, r.opacity, r.dock,
+            [r.mode, r.position, r.dockedWidth, r.fsFloat, r.shrink, r.opacity, r.dock,
                 r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict],
         ];
 
@@ -748,6 +795,19 @@ export const SettingsPanel = GObject.registerClass({
         return Math.round(v * 100) / 100;
     }
 
+    _dwValue() {
+        const v = DOCKED_WIDTH_MIN + this._dwSlider.value * (1 - DOCKED_WIDTH_MIN);
+        return Math.round(v * 100) / 100;
+    }
+
+    _syncDockedWidth() {
+        const v = this._settings.get_double('docked-width');
+        this._withSync(() => {
+            this._dwSlider.value = (v - DOCKED_WIDTH_MIN) / (1 - DOCKED_WIDTH_MIN);
+        });
+        this._dwLabel.text = formatPercent(v);
+    }
+
     _opValue() {
         const v = OPACITY_MIN + this._opSlider.value * (OPACITY_MAX - OPACITY_MIN);
         return Math.round(v * 100) / 100;
@@ -828,6 +888,13 @@ export const SettingsPanel = GObject.registerClass({
 
     _syncLayout() {
         this._layoutSeg.setActive(this._settings.get_string('layout'));
+        const style = this._settings.get_string('layout-style');
+        this._styleSeg.setActive(style);
+        // F-Reihe only exists in the classic arrangement, Satzanfang groß only in Touch.
+        if (this._rows?.fRow)
+            this._setRowSensitive(this._rows.fRow, this._fRowSwitch, style !== 'touch');
+        if (this._rows?.autoCap)
+            this._setRowSensitive(this._rows.autoCap, this._autoCapSwitch, style === 'touch');
     }
 
     _syncMode() {
@@ -837,6 +904,8 @@ export const SettingsPanel = GObject.registerClass({
         this._syncKeyHeight();
         this._setRowSensitive(this._rows.shrink, this._shrinkSwitch, !floating);
         this._setRowSensitive(this._rows.opacity, this._opSlider, floating);
+        this._setRowSensitive(this._rows.dockedWidth, this._dwSlider, mode === 'docked');
+        this._setRowSensitive(this._rows.position, this._posSeg.actor, !floating);
     }
 
     _setRowSensitive(row, control, sensitive) {
@@ -853,12 +922,16 @@ export const SettingsPanel = GObject.registerClass({
         this._syncMode();
         this._syncSwitch(this._fRowSwitch, 'show-f-row');
         this._syncLayout();
+        this._syncSwitch(this._autoCapSwitch, 'auto-capitalize');
         this._syncSwitch(this._shrinkSwitch, 'shrink-workarea');
         this._syncSwitch(this._autoSwitch, 'auto-show');
         this._syncSwitch(this._submitSwitch, 'hide-after-submit');
         this._syncSwitch(this._dockSwitch, 'move-dock-left');
         this._syncSwitch(this._aspectSwitch, 'keep-key-aspect');
         this._syncOpacity();
+        this._syncDockedWidth();
+        this._syncSwitch(this._fsFloatSwitch, 'fullscreen-floating');
+        this._posSeg.setActive(this._settings.get_string('keyboard-position'));
         this._syncBrightness();
         this._superSeg.setActive(this._settings.get_string('super-symbol'));
         this._barPosSeg.setActive(this._settings.get_string('suggestion-bar-position'));
@@ -873,6 +946,7 @@ export const SettingsPanel = GObject.registerClass({
     _flushWrites() {
         this._khWriter.flush();
         this._opWriter.flush();
+        this._dwWriter.flush();
         this._brWriter.flush();
         this._holdWriter.flush();
     }
@@ -881,6 +955,7 @@ export const SettingsPanel = GObject.registerClass({
         this._flushWrites();
         this._khWriter.cancel();
         this._opWriter.cancel();
+        this._dwWriter.cancel();
         this._brWriter.cancel();
         this._holdWriter.cancel();
         if (this._clearConfirmId) {

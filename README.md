@@ -15,6 +15,17 @@ Bild↑/Bild↓, Pfeiltasten, AltGr-Zeichen, QWERTZ oder QWERTY.
 - Schwebend-Modus: frei verschiebbar (Griffleiste), Größe über die Ecke unten rechts, einstellbare Deckkraft.
 - Einstellungen direkt in der Tastatur (Zahnrad) oder im Erweiterungen-Programm; beide nutzen dieselben Einstellungen.
 - Tastenhöhe in Millimetern (Standard 11,5 mm), umgerechnet über die physische Bildschirmgröße.
+- Zwei Tastenanordnungen (Einstellung „Anordnung“): **Klassisch** (ThinkPad-artig, 5–6 Reihen) und **Touch**
+  (an der Windows-11-Bildschirmtastatur orientiert, eigene Optik): 4 Reihen mit großen Tasten, Kleinbuchstaben,
+  - Ebene **&123**: Symbole links, Ziffernblock rechts, Pfeiltasten; Seite 2/3 mit weiteren Symbolen und
+    Pos1/Ende/Bild/Einfg/Entf, Seite 3/3 mit F1–F12, Lautstärke, Helligkeit, Medien,
+  - **Emoji-Feld** (☺) mit Kategorien, Seiten und „zuletzt verwendet“,
+  - **langes Drücken** zeigt Akzente/Varianten (a → ä á à …, s → ß, . → … usw.), Finger seitlich ziehen und loslassen,
+  - **Hochwischen** auf der oberen Buchstabenreihe tippt die angezeigte Ziffer (Q = 1 … P = 0),
+  - **Wischen auf der Leertaste** bewegt den Cursor (mit Shift: markieren),
+  - **Strg** zeigt Kurzbefehl-Hinweise (Alles, Kopieren, Einfügen, Rückgängig …),
+  - Satzanfang automatisch groß (nach . ! ? und Enter, abschaltbar), Shift doppelt tippen = Feststellen,
+  - im Daumen-Modus eine geteilte Fassung aller Ebenen.
 
 ## Installation
     ./install.sh

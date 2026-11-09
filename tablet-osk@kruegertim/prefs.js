@@ -61,6 +61,13 @@ export default class TabletOskPreferences extends ExtensionPreferences {
             ['qwertz', 'QWERTZ (Deutsch)'],
             ['qwerty', 'QWERTY (US)'],
         ]));
+        layoutGroup.add(comboRow(window, settings, 'layout-style', 'Tastenanordnung', [
+            ['classic', 'Klassisch (ThinkPad, 5–6 Reihen)'],
+            ['touch', 'Touch (4 Reihen, &123-Ebene, Emoji; nach Windows 11)'],
+            ['mini', 'T (kleines schwebendes Feld: ↑ ↓ F11 Strg+Alt+⇧+R ⚙)'],
+        ]));
+        layoutGroup.add(switchRow(settings, 'auto-capitalize', 'Satzanfang groß',
+            'Nur Touch: nach . ! ? und Enter beginnt das nächste Wort groß'));
         layoutGroup.add(switchRow(settings, 'show-f-row', 'Mit F-Reihe',
             'Aus = Kompakt: F1–F12 über Fn + Zahlenreihe'));
 
@@ -103,6 +110,38 @@ export default class TabletOskPreferences extends ExtensionPreferences {
         const shrinkRow = switchRow(settings, 'shrink-workarea', 'Inhalt verkleinern',
             'Fenster machen der Tastatur Platz, statt verdeckt zu werden (nur angedockt)');
         modeGroup.add(shrinkRow);
+
+        modeGroup.add(comboRow(window, settings, 'keyboard-position', 'Position', [
+            ['bottom', 'Unten'],
+            ['top', 'Oben (unter der oberen Leiste)'],
+        ], 'Angedockt und Daumen-Modus'));
+
+        modeGroup.add(switchRow(settings, 'fullscreen-floating', 'Bei Vollbild schwebend',
+            'Ist eine App im Vollbild, erscheint die Tastatur schwebend statt angedockt (danach wieder angedockt)'));
+
+        const widthRow = new Adw.SpinRow({
+            title: 'Breite angedockt (%)',
+            subtitle: 'Gesamtbreite der angedockten Tastatur, zentriert (schmalere Tasten)',
+            digits: 0,
+            adjustment: new Gtk.Adjustment({lower: 50, upper: 100, step_increment: 5, page_increment: 10}),
+        });
+        const syncWidth = () => {
+            const pct = Math.round(settings.get_double('docked-width') * 100);
+            if (widthRow.value !== pct)
+                widthRow.value = pct;
+        };
+        syncWidth();
+        widthRow.connect('notify::value', () => {
+            const v = widthRow.value / 100;
+            if (Math.abs(settings.get_double('docked-width') - v) > 0.001)
+                settings.set_double('docked-width', v);
+        });
+        const widthId = settings.connect('changed::docked-width', syncWidth);
+        window.connect('close-request', () => {
+            settings.disconnect(widthId);
+            return false;
+        });
+        modeGroup.add(widthRow);
 
         const opacityRow = new Adw.SpinRow({
             title: 'Deckkraft (%)',

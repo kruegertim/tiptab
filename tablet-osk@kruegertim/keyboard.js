@@ -21,6 +21,9 @@ import Pango from 'gi://Pango';
 import St from 'gi://St';
 
 import {getLayout, getSplitLayout, TOTAL_UNITS, SPLIT_TOTAL_UNITS, FALLBACK_KEYVALS} from './layouts.js';
+import {getTouchLayout, getMiniLayout, MINI_TOTAL_UNITS, TOUCH_TOTAL_UNITS, emojiPageCount, upperAlt, TOUCH_SPLIT_TOTAL_UNITS,
+    TOUCH_SPLIT_LEFT_UNITS, TOUCH_SPLIT_GAP_UNITS} from './touchLayouts.js';
+import {SPLIT_LEFT_UNITS, SPLIT_GAP_UNITS} from './layouts.js';
 import {KeyInjector} from './injector.js';
 import {isWaylandCompositor} from './compat.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -37,6 +40,13 @@ const FLOAT_BORDER_PX = 1;
 const SWIPE_SLOP = 0.25;    // start following the finger
 const SWIPE_TRIGGER = 1.0;  // the sequence becomes a swipe (pending key cancelled)
 const SWIPE_COMMIT = 0.5;   // on release: still this far down -> hide, else snap back
+
+// Touch style (Windows-11-like) gestures, in multiples of the key height.
+const ALT_LONG_PRESS_MS = 380;  // long press on a key with alternatives opens the popup
+const SWIPE_UP_TRIGGER = 0.5;   // swipe up on a key with an upChar (digit hint)
+const CURSOR_SLOP = 0.45;       // horizontal drag on the space bar starts cursor mode
+const CURSOR_STEP = 0.32;       // one arrow key per this much horizontal motion
+const RECENT_EMOJI_MAX = 36;
 
 const DIM_OPACITY = 115;    // ~45 % for inactive keycap glyphs
 
@@ -179,8 +189,38 @@ class OskKey extends St.Widget {
         // ISO Enter: the lower half reaches up through the row gap to join the upper
         // half. (Extending the upper half down instead would cover the gap above '#'.)
         this.extendUp = def.enterPart === 'bottom';
+        // Angled Shift: the upper stub reaches down into its wider lower part.
+        if (def.joinPart === 'top')
+            this.add_style_class_name('tosk-shift-top');
+        if (def.joinPart === 'bottom')
+            this.add_style_class_name('tosk-shift-bottom');
+        this.extendDown = def.joinPart === 'top';
+        this.heightScale = 1; // < 1: half-height key of a stacked pair (↑/↓)
+
+        if (def.emoji)
+            this.add_style_class_name('tosk-key-emoji');
+        if (def.type === 'layer')
+            this.add_style_class_name('tosk-key-layer');
+        if (def.id === 'SymLayer' || def.id === 'AbcLayer')
+            this.add_style_class_name('tosk-key-layerswitch');
+        if (def.type === 'enter')
+            this.add_style_class_name('tosk-key-enter');
+        if (def.disabled) {
+            this.add_style_class_name('tosk-key-disabled');
+            this.opacity = 90; // St CSS has no opacity property
+        }
+        if (def.emojiCatKey && def.emojiCat === keyboard._emojiCat)
+            this.add_style_class_name('tosk-key-current');
 
         this._buildGlyphs(def, keyboard._superSymbol);
+
+        // Touch style extras: digit hint (swipe up) and Strg hint (shown while Strg is on).
+        this._hint = def.upChar ? this._corner(E, S, 'tosk-label-hint', def.upChar) : null;
+        this._ctrlLabel = null;
+        if (def.ctrlHint) {
+            this._ctrlLabel = this._corner(C, E, 'tosk-label-ctrl', def.ctrlHint);
+            this._ctrlLabel.visible = false;
+        }
 
         this._toskTarget = {
             down: st => keyboard._keyDown(this, st),
@@ -214,7 +254,10 @@ class OskKey extends St.Widget {
             const base = def.label;
             const shift = def.letter ? null : def.shiftLabel ?? null;
             const altgr = def.altgrLabel ?? null;
-            if (!shift) {
+            if (def.emoji) {
+                this._main = this._corner(C, C, 'tosk-label-main tosk-label-emoji', base);
+                this._mainKind = 'emoji';
+            } else if (!shift) {
                 // Letter (or single glyph): one big centred label, like every other
                 // letter key. Letters with an AltGr glyph (Q @, E €, M µ) add it small
                 // in the bottom-right grid slot, so the letter stays centred.
@@ -317,11 +360,12 @@ class OskKey extends St.Widget {
     }
 
     setHeight(h) {
+        h = Math.round(h * this.heightScale);
         const big = Math.round(h * 0.4);
         const glyph = Math.round(h * 0.32);
         const small = Math.max(7, Math.round(h * 0.2));
         const narrow = this.units < 0.75; // compact-mode Esc / ^ (0.5 u)
-        const padV = Math.round(h * 0.07), padH = Math.round(h * (narrow ? 0.04 : 0.11));
+        const padV = this.heightScale < 1 ? 0 : Math.round(h * 0.07), padH = Math.round(h * (narrow ? 0.04 : 0.11));
         this.style = `padding: ${padV}px ${padH}px;`;
 
         if (this._multi) {
@@ -338,6 +382,10 @@ class OskKey extends St.Widget {
             let size = big;
             if (this._mainKind === 'small')
                 size = Math.round(h * (narrow ? 0.2 : 0.24));
+            else if (this._mainKind === 'emoji')
+                size = Math.round(h * 0.44);
+            else if (this._mainKind === 'text' && this.def.type === 'layer')
+                size = Math.round(h * 0.26);
             else if (this._mainKind === 'text')
                 size = Math.round(h * 0.3);
             this._main.style = `font-size: ${size}px;`;
@@ -348,6 +396,21 @@ class OskKey extends St.Widget {
             this._fnIcon.icon_size = Math.round(h * (this.def.fnCentre ? 0.34 : 0.22));
         if (this._fnText)
             this._fnText.style = `font-size: ${this.def.fnCentre ? Math.round(h * 0.26) : small}px;`;
+        if (this._hint)
+            this._hint.style = `font-size: ${Math.max(7, Math.round(h * 0.2))}px;`;
+        if (this._ctrlLabel)
+            this._ctrlLabel.style = `font-size: ${Math.max(7, Math.round(h * 0.16))}px;`;
+    }
+
+    // Touch style: letter labels follow Shift/Caps (lower case normally).
+    setCase(upper) {
+        if (this.def.letter && this._main && !this._multi)
+            this._main.text = upper ? this.def.shiftChar : this.def.char;
+    }
+
+    setCtrlHint(on) {
+        if (this._ctrlLabel)
+            this._ctrlLabel.visible = on;
     }
 
     // Highlight the glyph that the next tap produces; dim the others while
@@ -430,7 +493,8 @@ class KeyRow extends St.Widget {
             cum += child.units;
             const x2 = Math.max(x1, content.x1 + Math.round(cum * unit) - gap);
             const y1 = content.y1 - (child.extendUp ? gap : 0);
-            child.allocate(Clutter.ActorBox.new(x1, y1, x2, content.y2));
+            const y2 = content.y2 + (child.extendDown ? gap : 0);
+            child.allocate(Clutter.ActorBox.new(x1, y1, x2, y2));
         }
     }
 });
@@ -524,6 +588,14 @@ export const OskKeyboard = GObject.registerClass({
         this._keyResolver = null;
 
         this._superSymbol = this._readSuperSymbol();
+        // Touch style state (layer, emoji category/page) and auto-capitalisation history.
+        this._style = this._readStyle();
+        this._layer = 'abc';
+        this._emojiCat = 1;
+        this._emojiPage = 0;
+        this._recentText = '';
+        this._layerIdleId = 0;
+        this._swipeDir = 1; // -1: keyboard at the top edge, swipe up hides
         this._noopTarget = {down() {}, up() {}, cancel() {}};
 
         this._keys = [];
@@ -531,7 +603,7 @@ export const OskKeyboard = GObject.registerClass({
 
         this._buildHandle();
         this._buildSuggestionBar();
-        this._bar.visible = this._settings.get_boolean('suggestions');
+        this._bar.visible = this._settings.get_boolean('suggestions') && !this.mini;
         this._rowsBox = new St.BoxLayout({vertical: true, x_expand: true, style_class: 'tosk-rows'});
         this.add_child(this._rowsBox);
         this._buildFooter();
@@ -541,6 +613,19 @@ export const OskKeyboard = GObject.registerClass({
 
         this._settings.connectObject(
             'changed::layout', () => this._rebuild(),
+            'changed::layout-style', () => {
+                const style = this._readStyle();
+                if (style === this._style)
+                    return;
+                // remember where the ✕ key of arrangement T returns to
+                if (style === 'mini' && this._hasKey('previous-layout-style'))
+                    this._settings.set_string('previous-layout-style', this._style);
+                this._style = style;
+                this._layer = 'abc';
+                this._syncBarVisible(false);
+                this._footer.visible = this._floating && !this.mini;
+                this._rebuild(); // emits layout-changed: extension re-lays out the thumb halves
+            },
             'changed::show-f-row', () => this._rebuild(),
             'changed::label-brightness', () => this._applyContainerStyle(),
             'changed::suggestions', () => this._syncBarVisible(),
@@ -581,6 +666,31 @@ export const OskKeyboard = GObject.registerClass({
             return 'fish';
         const v = this._settings.get_string('super-symbol');
         return SUPER_SYMBOLS.includes(v) ? v : 'fish';
+    }
+
+    _readStyle() {
+        if (!this._hasKey('layout-style'))
+            return 'classic';
+        const v = this._settings.get_string('layout-style');
+        return v === 'touch' || v === 'mini' ? v : 'classic';
+    }
+
+    /** Mini style "T": one row of special keys, always floating, no suggestion bar. */
+    get mini() {
+        return this._style === 'mini';
+    }
+
+    get touch() {
+        return this._style === 'touch';
+    }
+
+    _autoCapEnabled() {
+        return this.touch && (this._hasKey('auto-capitalize')
+            ? this._settings.get_boolean('auto-capitalize') : true);
+    }
+
+    _recentEmoji() {
+        return this._hasKey('recent-emoji') ? this._settings.get_strv('recent-emoji') : [];
     }
 
     _holdEnabled() {
@@ -649,7 +759,13 @@ export const OskKeyboard = GObject.registerClass({
 
         for (const k of this._keys)
             k.setHeight(h);
+        this._applyStackSpacing();
         this.queue_relayout();
+    }
+
+    _applyStackSpacing() {
+        for (const box of this._stacks ?? [])
+            box.style = `spacing: ${this._gap}px;`;
     }
 
     get preferredHeight() {
@@ -659,7 +775,7 @@ export const OskKeyboard = GObject.registerClass({
         let height = bar + this._gap + n * this._keyHeight +
             Math.max(0, n - 1) * this._gap + this._pad;
         if (this._floating)
-            height += 2 * this._gripH + 2 * FLOAT_BORDER_PX;
+            height += (this._footer.visible ? 2 : 1) * this._gripH + 2 * FLOAT_BORDER_PX;
         return height;
     }
 
@@ -688,6 +804,11 @@ export const OskKeyboard = GObject.registerClass({
         this._pickSpans = spans ?? null;
     }
 
+    /** 1: swipe down hides (keyboard at the bottom), -1: swipe up hides (at the top). */
+    setSwipeDirection(dir) {
+        this._swipeDir = dir < 0 ? -1 : 1;
+    }
+
     /** Docked narrow mode: extra horizontal inset (px) on both sides of the keys. */
     setSideInset(px) {
         px = Math.max(0, Math.round(px));
@@ -699,7 +820,18 @@ export const OskKeyboard = GObject.registerClass({
     }
 
     get _totalUnits() {
-        return this._thumb ? SPLIT_TOTAL_UNITS : TOTAL_UNITS;
+        if (this.mini)
+            return MINI_TOTAL_UNITS;
+        if (this._thumb)
+            return this.touch ? TOUCH_SPLIT_TOTAL_UNITS : SPLIT_TOTAL_UNITS;
+        return this.touch ? TOUCH_TOTAL_UNITS : TOTAL_UNITS;
+    }
+
+    /** Thumb mode grid in units: {total, left, gap} (the right half is the rest). */
+    get splitGeometry() {
+        return this.touch
+            ? {total: TOUCH_SPLIT_TOTAL_UNITS, left: TOUCH_SPLIT_LEFT_UNITS, gap: TOUCH_SPLIT_GAP_UNITS}
+            : {total: SPLIT_TOTAL_UNITS, left: SPLIT_LEFT_UNITS, gap: SPLIT_GAP_UNITS};
     }
 
     get thumb() {
@@ -741,7 +873,7 @@ export const OskKeyboard = GObject.registerClass({
         else
             this.remove_style_class_name('tosk-floating');
         this._handle.visible = floating;
-        this._footer.visible = floating;
+        this._footer.visible = floating && !this.mini; // mini: fixed size, no resize grip
         this._applyContainerStyle();
         this.queue_relayout();
     }
@@ -749,9 +881,15 @@ export const OskKeyboard = GObject.registerClass({
     resetModifiers() {
         this._stopRepeat();
         this._clearSuperTimer();
+        this._recentText = '';
+        this._autoShiftPending = false;
+        if (this._layer !== 'abc') {
+            this._layer = 'abc';
+            this._scheduleLayerRebuild();
+        }
         if ([...this._seqs.values()].some(st => st.candidate))
             this.emit('swipe-cancel');
-        this._seqs.clear();
+        this._dropSequences();
         this._held.clear();
         this._extraMods = null;
         for (const k of this._keys)
@@ -920,14 +1058,15 @@ export const OskKeyboard = GObject.registerClass({
 
     // Without suggestions the bar goes away entirely and the keyboard (and the
     // reserved work area) gets shorter by its height; autocorrect works without it.
-    _syncBarVisible() {
-        const visible = this._settings.get_boolean('suggestions');
+    _syncBarVisible(emit = true) {
+        const visible = this._settings.get_boolean('suggestions') && !this.mini;
         if (this._bar.visible === visible)
             return;
         this._bar.visible = visible;
         this._applyRowsStyle();
         this.queue_relayout();
-        this.emit('layout-changed');
+        if (emit)
+            this.emit('layout-changed');
     }
 
     _renderSuggestions() {
@@ -974,23 +1113,64 @@ export const OskKeyboard = GObject.registerClass({
     _rebuild(emit = true) {
         this._stopRepeat();
         this._clearSuperTimer();
-        this._seqs.clear();
+        this._dropSequences();
         this._held.clear();
         this._injector.releaseAll();
         this._rowsBox.destroy_all_children();
         this._keys = [];
         this._modifierKeys = {};
-        this._rows = this._thumb
-            ? getSplitLayout({layout: this._settings.get_string('layout')})
-            : getLayout({
+        if (this.touch)
+            this.add_style_class_name('tosk-style-touch');
+        else
+            this.remove_style_class_name('tosk-style-touch');
+        if (this.mini) {
+            this._rows = getMiniLayout();
+        } else if (this.touch) {
+            const recent = this._recentEmoji();
+            if (this._layer === 'emoji') {
+                if (this._emojiCat === 0 && recent.length === 0)
+                    this._emojiCat = 1;
+                this._emojiPage = Math.min(this._emojiPage, emojiPageCount(this._emojiCat, recent) - 1);
+            }
+            this._rows = getTouchLayout({
                 layout: this._settings.get_string('layout'),
-                fRow: this._settings.get_boolean('show-f-row'),
+                layer: this._layer,
+                split: !!this._thumb,
+                emojiCat: this._emojiCat,
+                emojiPage: this._emojiPage,
+                recentEmoji: recent,
             });
+        } else {
+            this._rows = this._thumb
+                ? getSplitLayout({layout: this._settings.get_string('layout')})
+                : getLayout({
+                    layout: this._settings.get_string('layout'),
+                    fRow: this._settings.get_boolean('show-f-row'),
+                });
+        }
 
         const enterParts = [];
+        const joinGroups = {};
+        this._stacks = [];
         for (const rowDef of this._rows) {
             const row = new KeyRow(this);
             for (const def of rowDef) {
+                if (def.type === 'stack') {
+                    // Two half-height keys on top of each other in one slot (↑ above ↓).
+                    const box = new St.BoxLayout({vertical: true, x_expand: true, y_expand: true});
+                    box.layout_manager.homogeneous = true;
+                    box.units = def.w;
+                    for (const partDef of def.parts) {
+                        const part = new OskKey(partDef, this);
+                        part.y_expand = true;
+                        part.heightScale = 0.8; // larger glyphs; no vertical padding (see setHeight)
+                        box.add_child(part);
+                        this._keys.push(part);
+                    }
+                    this._stacks.push(box);
+                    row.add_child(box);
+                    continue;
+                }
                 if (def.type === 'gap') {
                     // Thumb mode: empty, non-reactive middle (touches reach the app).
                     const spacer = new St.Widget({reactive: false});
@@ -1005,6 +1185,8 @@ export const OskKeyboard = GObject.registerClass({
                     (this._modifierKeys[def.modifier] ??= []).push(key); // split: two Shift keys
                 if (def.enterPart)
                     enterParts.push(key);
+                if (def.joinGroup)
+                    (joinGroups[def.joinGroup] ??= []).push(key);
             }
             this._rowsBox.add_child(row);
         }
@@ -1012,6 +1194,13 @@ export const OskKeyboard = GObject.registerClass({
             enterParts[0].twin = enterParts[1];
             enterParts[1].twin = enterParts[0];
         }
+        for (const parts of Object.values(joinGroups)) {
+            if (parts.length === 2) {
+                parts[0].twin = parts[1];
+                parts[1].twin = parts[0];
+            }
+        }
+        this._applyStackSpacing();
 
         for (const k of this._keys)
             k.setHeight(this._keyHeight);
@@ -1108,14 +1297,21 @@ export const OskKeyboard = GObject.registerClass({
     }
 
     _trackSwipe(st) {
+        if (st.altPopup) {
+            this._updateAltPopup(st);
+            return;
+        }
+        if (this._trackTouchGestures(st))
+            return;
         if (st.swiping) {
-            this.emit('swipe-progress', Math.max(0, st.y - st.y0));
+            this.emit('swipe-progress', Math.max(0, (st.y - st.y0) * this._swipeDir));
             return;
         }
         if (!this._swipeEnabled())
             return;
         const kh = this._keyHeight;
-        const dx = st.x - st.x0, dy = st.y - st.y0;
+        // dy > 0 = towards the screen edge the keyboard is docked at (down, or up at the top)
+        const dx = st.x - st.x0, dy = (st.y - st.y0) * this._swipeDir;
         const vertical = dy > 2 * Math.abs(dx);
         if (!st.candidate) {
             // Only a lone finger can swipe: a held modifier (or any other finger)
@@ -1136,7 +1332,7 @@ export const OskKeyboard = GObject.registerClass({
 
     _finishSeq(st) {
         if (st.swiping) {
-            if (st.y - st.y0 > this._keyHeight * SWIPE_COMMIT)
+            if ((st.y - st.y0) * this._swipeDir > this._keyHeight * SWIPE_COMMIT)
                 this.emit('swipe-hide');
             else
                 this.emit('swipe-cancel');
@@ -1158,6 +1354,7 @@ export const OskKeyboard = GObject.registerClass({
 
     _keyDown(key, st) {
         const def = key.def;
+        st.key = key;
         key.setActive(true);
         if (def.type === 'modifier') {
             this._modDown(def.modifier, st);
@@ -1171,7 +1368,13 @@ export const OskKeyboard = GObject.registerClass({
             st.heldSnapshot = new Set(this._held.keys());
             this._markHeldUsed();
         }
+        if (def.type === 'layer')
+            return;
         this._withExtraMods(st, () => {
+            if (def.alts && this.touch && !this._isCombo(def) && !this._modActive('altgr')) {
+                this._startAltTimer(key, st);
+                return;
+            }
             // Shortcuts (Strg/Alt/Super) and Fn functions never auto-repeat: they may
             // open a modal shell UI that swallows our release event.
             if (def.repeat && !this._isCombo(def))
@@ -1192,13 +1395,35 @@ export const OskKeyboard = GObject.registerClass({
             this.emit('hide-request');
             return;
         }
+        if (def.type === 'layer') {
+            this._switchLayer(def);
+            return;
+        }
+        this._clearAltTimer(st);
+        if (st.altPopup) {
+            const str = this._closeAltPopup(st);
+            if (str)
+                this._typeAlternative(str);
+            this._consumeOneShots();
+            return;
+        }
+        if (st.cursor)
+            return; // space bar drag moved the cursor
+        if (st.swipeUp) {
+            this._typeAlternative(def.upChar);
+            this._consumeOneShots();
+            return;
+        }
         if (!st.fired)
             this._activateKey(key, st);
         this._consumeOneShots();
+        this._applyAutoShift();
     }
 
     _keyCancel(key, st) {
         key.setActive(false);
+        this._clearAltTimer(st);
+        this._closeAltPopup(st);
         if (this._repeatSt === st)
             this._stopRepeat();
         if (key.def.type === 'modifier') {
@@ -1485,6 +1710,14 @@ export const OskKeyboard = GObject.registerClass({
         const altgrOn = this._latched.has('altgr') || this._held.has('altgr');
         for (const k of this._keys)
             k.setLevel(shiftOn, altgrOn);
+        if (this.touch) {
+            const upper = shiftOn !== this._caps;
+            const ctrlOn = this._latched.has('ctrl') || this._held.has('ctrl');
+            for (const k of this._keys) {
+                k.setCase(upper);
+                k.setCtrlHint(ctrlOn);
+            }
+        }
     }
 
     _shortcutModifiers() {
@@ -1506,6 +1739,27 @@ export const OskKeyboard = GObject.registerClass({
         const mods = this._shortcutModifiers();
         const shift = this._modActive('shift');
         const withShift = shift ? [Clutter.KEY_Shift_L, ...mods] : mods;
+
+        if (def.combo) {
+            // Fixed shortcut key (mini style): e.g. Strg+Alt+Shift+R
+            this._injector.tap(resolveKeyval(def.keysym), def.combo.map(resolveKeyval));
+            this.emit('key-sent', 'shortcut');
+            return;
+        }
+
+        if (def.action === 'exit-mini') {
+            let prev = this._hasKey('previous-layout-style')
+                ? this._settings.get_string('previous-layout-style') : 'touch';
+            if (prev !== 'classic' && prev !== 'touch')
+                prev = 'touch';
+            this._settings.set_string('layout-style', prev);
+            return;
+        }
+
+        if (def.action === 'settings') {
+            this.emit('settings-request');
+            return;
+        }
 
         if (this._modActive('fn') && def.fnAction === 'settings') {
             this.emit('settings-request');
@@ -1535,23 +1789,7 @@ export const OskKeyboard = GObject.registerClass({
                 this.emit('key-sent', 'shortcut');
                 return;
             }
-            const str = this._charFor(def);
-            this._pendingText = '';
-            if (this._charFilter) {
-                this._inCharFilter = true;
-                try {
-                    this._charFilter(str);
-                } catch (e) {
-                    console.error(`[tablet-osk] char filter: ${e}`);
-                } finally {
-                    this._inCharFilter = false;
-                }
-            }
-            if (!this._injector)
-                return;
-            this._injector.typeChar(this._pendingText + str, []);
-            this._pendingText = '';
-            this.emit('text-typed', str);
+            this._typeString(this._charFor(def), def);
             return;
         }
 
@@ -1569,9 +1807,283 @@ export const OskKeyboard = GObject.registerClass({
         const keyval = resolveKeyval(def.keysym);
         if (keyval) {
             this._injector.tap(keyval, withShift);
-            if (mods.length === 0)
+            if (mods.length === 0) {
+                this._noteSpecialKey(def.keysym);
                 this.emit('key-sent', def.keysym);
+            }
         }
+    }
+
+    // Printable output of a key, an alternative from the long-press popup or a swipe-up
+    // digit: goes through the char filter (autocorrect) like any typed character.
+    _typeString(str, def = null) {
+        this._pendingText = '';
+        if (this._charFilter) {
+            this._inCharFilter = true;
+            try {
+                this._charFilter(str);
+            } catch (e) {
+                console.error(`[tablet-osk] char filter: ${e}`);
+            } finally {
+                this._inCharFilter = false;
+            }
+        }
+        if (!this._injector)
+            return;
+        this._injector.typeChar(this._pendingText + str, []);
+        this._pendingText = '';
+        this.emit('text-typed', str);
+        if (def?.emoji)
+            this._rememberEmoji(str);
+        this._noteTyped(str);
+    }
+
+    _typeAlternative(str) {
+        if (!str || !this._injector)
+            return;
+        const mods = this._shortcutModifiers();
+        if (mods.length > 0) {
+            this._injector.typeChar(str, mods);
+            this.emit('key-sent', 'shortcut');
+            return;
+        }
+        this._markHeldUsed();
+        this._typeString(str);
+    }
+
+    // ------------------------------------------------------------ touch style
+
+    // Auto-capitalisation (touch style): after ". ", "! ", "? " and after Enter the next
+    // letter starts in upper case (Shift one-shot, tap Shift to cancel).
+    _noteTyped(str) {
+        if (!this.touch)
+            return;
+        this._recentText = (this._recentText + str).slice(-4);
+        if (str === ' ' && /[.!?…] $/.test(this._recentText))
+            this._autoShiftPending = true;
+    }
+
+    _noteSpecialKey(keysym) {
+        if (!this.touch)
+            return;
+        if (keysym === 'BackSpace') {
+            this._recentText = this._recentText.slice(0, -1);
+        } else if (keysym === 'Return') {
+            this._recentText = '\n';
+            this._autoShiftPending = true;
+        } else {
+            this._recentText = '';
+        }
+    }
+
+    _applyAutoShift() {
+        if (!this._autoShiftPending)
+            return;
+        this._autoShiftPending = false;
+        if (!this._autoCapEnabled() || this._shift !== 0 || this._caps)
+            return;
+        this._shift = 1;
+        this._updateModifierState();
+    }
+
+    _rememberEmoji(e) {
+        if (!this._hasKey('recent-emoji'))
+            return;
+        const list = [e, ...this._recentEmoji().filter(x => x !== e)].slice(0, RECENT_EMOJI_MAX);
+        try {
+            this._settings.set_strv('recent-emoji', list);
+        } catch (err) {
+            console.error(`[tablet-osk] recent emoji: ${err}`);
+        }
+    }
+
+    _switchLayer(def) {
+        if (def.disabled)
+            return;
+        if (def.layer === 'emoji-page') {
+            this._emojiPage = Math.max(0, this._emojiPage + (def.pageStep ?? 0));
+        } else if (def.layer === 'emoji') {
+            if (def.emojiCat !== undefined) {
+                this._emojiCat = def.emojiCat;
+                this._emojiPage = 0;
+            } else if (this._layer !== 'emoji') {
+                // open on "recently used" when there is something, else Smileys
+                this._emojiCat = this._recentEmoji().length > 0 ? 0 : 1;
+                this._emojiPage = 0;
+            }
+            this._layer = 'emoji';
+        } else {
+            this._layer = def.layer;
+        }
+        this._scheduleLayerRebuild();
+    }
+
+    // Rebuild outside the event handler of the key that is being destroyed. All layers
+    // have four rows, so the keyboard height (and the work area) stays the same.
+    _scheduleLayerRebuild() {
+        if (this._layerIdleId)
+            return;
+        this._layerIdleId = GLib.idle_add(GLib.PRIORITY_HIGH_IDLE, () => {
+            this._layerIdleId = 0;
+            this._rebuild(false);
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    // Swipe up on a key with a digit hint, horizontal drag on the space bar (cursor).
+    // Returns true while the sequence is consumed by one of these gestures.
+    _trackTouchGestures(st) {
+        if (!this.touch || !st.key || this._seqs.size !== 1)
+            return false;
+        const def = st.key.def;
+        const kh = this._keyHeight;
+        const dx = st.x - st.x0, dy = st.y - st.y0;
+        if (st.cursor) {
+            this._moveCursor(st);
+            return true;
+        }
+        if (def.cursorSpace && Math.abs(dx) > kh * CURSOR_SLOP && Math.abs(dx) > 1.5 * Math.abs(dy)) {
+            st.cursor = true;
+            st.cursorX = st.x0;
+            if (this._repeatSt === st)
+                this._stopRepeat();
+            this._moveCursor(st);
+            return true;
+        }
+        if (def.upChar) {
+            if (dy < -kh * SWIPE_UP_TRIGGER && -dy > 1.5 * Math.abs(dx)) {
+                if (!st.swipeUp) {
+                    st.swipeUp = true;
+                    this._clearAltTimer(st);
+                    if (this._repeatSt === st)
+                        this._stopRepeat();
+                }
+                return true;
+            }
+            if (st.swipeUp && dy > -kh * SWIPE_UP_TRIGGER * 0.5)
+                st.swipeUp = false; // moved back down: plain tap again
+            return st.swipeUp;
+        }
+        return false;
+    }
+
+    _moveCursor(st) {
+        const step = Math.max(4, this._keyHeight * CURSOR_STEP);
+        const n = Math.trunc((st.x - st.cursorX) / step);
+        if (!n)
+            return;
+        st.cursorX += n * step;
+        const keysym = n > 0 ? 'Right' : 'Left';
+        // Shift (one-shot, locked or held) extends the selection like on a hardware keyboard.
+        const mods = this._modActive('shift') ? [Clutter.KEY_Shift_L] : [];
+        for (let i = 0; i < Math.abs(n); i++)
+            this._injector?.tap(resolveKeyval(keysym), mods);
+        this._recentText = '';
+        this.emit('key-sent', keysym);
+    }
+
+    _startAltTimer(key, st) {
+        this._clearAltTimer(st);
+        st.altTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, ALT_LONG_PRESS_MS, () => {
+            st.altTimer = 0;
+            if (key.mapped && !st.swipeUp && !st.swiping && !st.candidate && this._seqs.get(st.id) === st)
+                this._openAltPopup(key, st);
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _clearAltTimer(st) {
+        if (st?.altTimer) {
+            GLib.source_remove(st.altTimer);
+            st.altTimer = 0;
+        }
+    }
+
+    // Long-press popup above the key: one cell per alternative, the first is selected;
+    // sliding left/right selects, release types the selection, sliding down cancels.
+    _openAltPopup(key, st) {
+        const def = key.def;
+        const upper = def.letter && (this._modActive('shift') !== this._caps);
+        const alts = def.alts.map(a => upper ? upperAlt(a) : a);
+        const [kx, ky] = key.get_transformed_position();
+        const [kw, kh] = key.get_transformed_size();
+        const gap = this._gap, p = this._gap;
+        const n = alts.length;
+        const width = n * kw + (n - 1) * gap + 2 * p;
+        const height = kh + 2 * p;
+        const monitor = Main.layoutManager.findMonitorForActor(this) ?? Main.layoutManager.primaryMonitor;
+        let x = kx - p;
+        if (monitor)
+            x = Math.max(monitor.x, Math.min(x, monitor.x + monitor.width - width));
+        let y = ky - height - gap;
+        if (monitor && y < monitor.y)
+            y = monitor.y;
+        const actor = new St.BoxLayout({
+            style_class: 'tosk-alt-popup',
+            reactive: false,
+            style: `padding: ${p}px; spacing: ${gap}px; border-radius: ${Math.round(kh * 0.18)}px;`,
+        });
+        const font = Math.round(kh * 0.4);
+        const cells = alts.map(a => {
+            const cell = new St.Bin({
+                style_class: 'tosk-alt-cell',
+                width: Math.round(kw),
+                height: Math.round(kh),
+                style: `border-radius: ${Math.round(kh * 0.14)}px;`,
+                child: new St.Label({
+                    text: a,
+                    style: `font-size: ${font}px;`,
+                    x_align: C, y_align: C,
+                }),
+            });
+            actor.add_child(cell);
+            return cell;
+        });
+        Main.layoutManager.uiGroup.add_child(actor);
+        actor.set_position(Math.round(x), Math.round(y));
+        st.altPopup = {
+            actor, cells, alts, sel: -1,
+            x0: x + p, cellW: kw + gap, keyBottom: ky + kh, kh,
+        };
+        st.fired = true;
+        if (this._repeatSt === st)
+            this._stopRepeat();
+        this._updateAltPopup(st);
+    }
+
+    _updateAltPopup(st) {
+        const pop = st.altPopup;
+        let idx = Math.floor((st.x - pop.x0) / pop.cellW);
+        idx = Math.max(0, Math.min(pop.cells.length - 1, idx));
+        if (st.y > pop.keyBottom + pop.kh * 0.6)
+            idx = -1; // slid down off the key: cancel
+        if (idx === pop.sel)
+            return;
+        pop.sel = idx;
+        pop.cells.forEach((c, i) => {
+            if (i === idx)
+                c.add_style_pseudo_class('selected');
+            else
+                c.remove_style_pseudo_class('selected');
+        });
+    }
+
+    /** Closes the popup of a sequence; returns the selected alternative (or null). */
+    _closeAltPopup(st) {
+        const pop = st?.altPopup;
+        if (!pop)
+            return null;
+        st.altPopup = null;
+        pop.actor.destroy();
+        return pop.sel >= 0 ? pop.alts[pop.sel] : null;
+    }
+
+    _dropSequences() {
+        for (const st of this._seqs.values()) {
+            this._clearAltTimer(st);
+            this._closeAltPopup(st);
+        }
+        this._seqs.clear();
     }
 
     _charFor(def) {
@@ -1590,7 +2102,11 @@ export const OskKeyboard = GObject.registerClass({
         Main.screenshotUI?.disconnectObject(this);
         this._stopRepeat();
         this._clearSuperTimer();
-        this._seqs.clear();
+        this._dropSequences();
+        if (this._layerIdleId) {
+            GLib.source_remove(this._layerIdleId);
+            this._layerIdleId = 0;
+        }
         this._held.clear();
         this._settings?.disconnectObject(this);
         this._settings = null;

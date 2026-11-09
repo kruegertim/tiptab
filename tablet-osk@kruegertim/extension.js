@@ -15,7 +15,6 @@ import {SettingsPanel} from './settingsPanel.js';
 import {FloatingController} from './floating.js';
 import {DockMover} from './dock.js';
 import {PredictController} from './predictController.js';
-import {SPLIT_TOTAL_UNITS, SPLIT_LEFT_UNITS, SPLIT_GAP_UNITS} from './layouts.js';
 
 const ANIMATION_TIME = 200;
 const MIN_FLOATING_KEY_MM = 6;
@@ -66,7 +65,7 @@ export default class TabletOskExtension extends Extension {
             'key-sent', (_k, name) => this._visibility?.onKeySent(name),
             'swipe-progress', (_k, dy) => {
                 if (this._visible && this._container)
-                    this._container.translation_y = Math.max(0, dy);
+                    this._container.translation_y = this._atTop ? -Math.max(0, dy) : Math.max(0, dy);
             },
             'swipe-cancel', () => {
                 this._container?.ease({
@@ -87,6 +86,7 @@ export default class TabletOskExtension extends Extension {
             getGrabActor: () => this._keyboard.handle,
             getResizeGrip: () => this._keyboard.resizeGrip,
             onGeometryChanged: ({width}) => this._applyFloatingHeight(width),
+            getFixedWidth: () => this._miniWidth(),
         });
 
         this._physical = new PhysicalKeyboardMonitor(() => {});
@@ -99,6 +99,7 @@ export default class TabletOskExtension extends Extension {
             getHandle: () => this._keyboard.handle,
             getKeyboardActor: () => this._container,
             physicalKeyboard: this._physical,
+            isPinned: () => !!this._panel?.visible,
         });
 
         this._indicator = new PanelIndicator({
@@ -110,17 +111,29 @@ export default class TabletOskExtension extends Extension {
         this._settings.connectObject(
             'changed::key-height-mm', () => this._relayout(),
             'changed::keep-key-aspect', () => this._relayout(),
+            'changed::docked-width', () => this._relayout(),
+            'changed::keyboard-position', () => this._relayout(),
             'changed::thumb-key-height-mm', () => this._relayout(),
             'changed::show-f-row', () => this._afterRebuild(),
             'changed::layout', () => this._afterRebuild(),
             'changed::mode', () => this._applyMode(),
+            'changed::layout-style', () => this._applyMode(),
+            'changed::fullscreen-floating', () => this._applyMode(),
             this);
+        // Fullscreen apps: switch to floating and back (see _fullscreenFloating).
+        global.display.connectObject('in-fullscreen-changed', () => {
+            const floating = this._isFloating;
+            if (floating !== this._keyboard?.floating)
+                this._applyMode();
+        }, this);
         Main.layoutManager.connectObject('monitors-changed', () => this._relayout(), this);
 
         this._applyMode();
     }
 
     disable() {
+        this._setUnredirectBlocked(false);
+        global.display.disconnectObject(this);
         this._settings?.disconnectObject(this);
         Main.layoutManager.disconnectObject(this);
         if (this._relayoutId) {
@@ -210,7 +223,32 @@ export default class TabletOskExtension extends Extension {
     // ---- geometry -----------------------------------------------------------------------
 
     get _isFloating() {
-        return this._settings.get_string('mode') === 'floating';
+        return this._settings.get_string('mode') === 'floating' || this._isMini || this._fullscreenFloating;
+    }
+
+    // An app is fullscreen on the keyboard's monitor: float instead of docking (a docked
+    // keyboard would cover the bottom of the fullscreen app; struts do not apply to it).
+    get _fullscreenFloating() {
+        if (!this._settings.get_boolean('fullscreen-floating'))
+            return false;
+        try {
+            return !!this._monitor()?.inFullscreen;
+        } catch {
+            return false;
+        }
+    }
+
+    // Arrangement "T" (mini): a small panel that is always floating.
+    get _isMini() {
+        return this._settings.get_string('layout-style') === 'mini';
+    }
+
+    // Mini: square panel; keys as high as docked keys, width = panel height.
+    _miniWidth() {
+        if (!this._isMini || !this._keyboard)
+            return 0;
+        this._keyboard.setKeyHeight(this._dockedKeyPx());
+        return Math.round(this._keyboard.preferredHeight);
     }
 
     _monitor() {
@@ -240,7 +278,7 @@ export default class TabletOskExtension extends Extension {
             this._floating.enable();
         } else {
             this._floating.disable();
-            if (this._visible)
+            if (this._visible && !this._atTop)
                 this._dockMover.moveAway();
         }
         // WorkArea watches 'mode' itself and drops the strut while floating.
@@ -248,18 +286,50 @@ export default class TabletOskExtension extends Extension {
         // The handle getter is null when docked, the grab bar when floating.
         this._visibility?.rebindHandle();
         this._floating.rebind();
+        // Arrangement "T" stays on screen permanently.
+        if (this._isMini && !this._visible) {
+            this._show();
+            this._visibility?.notifyVisibleChanged();
+        }
     }
 
     _applyFloatingHeight(width) {
         const monitor = this._monitor();
         if (!monitor || !this._keyboard)
             return;
+        if (this._isMini) {
+            // fixed-size panel: keys as high as docked keys
+            this._keyboard.setKeyHeight(this._dockedKeyPx());
+            this._container.height = Math.round(this._keyboard.preferredHeight);
+            return;
+        }
         const minPx = this._metrics.keyHeightPx(Main.layoutManager.primaryIndex, MIN_FLOATING_KEY_MM);
         // Same key aspect ratio as docked: never flatter than at REFERENCE_KEY_MM.
         const dockedPx = Math.max(this._dockedKeyPx(), this._referenceKeyPx());
         const keyPx = Math.max(minPx, Math.round(dockedPx * width / monitor.width));
         this._keyboard.setKeyHeight(keyPx);
         this._container.height = Math.round(this._keyboard.preferredHeight);
+    }
+
+    get _atTop() {
+        return !this._isFloating && this._settings.get_string('keyboard-position') === 'top';
+    }
+
+    // Height of the top bar if it is on this monitor (the keyboard docks below it).
+    _topBarOffset(monitor) {
+        const panelBox = Main.layoutManager.panelBox;
+        if (!panelBox?.visible || monitor.index !== Main.layoutManager.primaryIndex)
+            return 0;
+        return Math.max(0, Math.round(panelBox.y + panelBox.height - monitor.y));
+    }
+
+    // translation_y that moves the docked keyboard just off screen.
+    _hiddenTranslation() {
+        const c = this._container;
+        if (!this._atTop)
+            return c.height;
+        const monitor = this._monitor();
+        return -(c.height + (monitor ? c.y - monitor.y : 0));
     }
 
     _relayout() {
@@ -303,16 +373,30 @@ export default class TabletOskExtension extends Extension {
         this._keyboard.x_align = Clutter.ActorAlign.FILL;
         if (!thumb)
             this._keyboard.setPickSpans(null);
-        const kbW = keyPx < refPx ? Math.round(monitor.width * keyPx / refPx) : monitor.width;
+        let kbW = keyPx < refPx ? Math.round(monitor.width * keyPx / refPx) : monitor.width;
+        // Docked width setting (fraction of the screen): narrower keys, centred.
+        const widthFrac = Math.min(1, Math.max(0.5, this._settings.get_double('docked-width')));
+        if (!thumb)
+            kbW = Math.min(kbW, Math.round(monitor.width * widthFrac));
         this._keyboard.setSideInset((monitor.width - kbW) / 2);
         const height = Math.min(Math.round(this._keyboard.preferredHeight),
             Math.round(monitor.height * 0.6));
         this._container.set_size(monitor.width, height);
-        this._container.set_position(monitor.x, monitor.y + monitor.height - height);
+        // Bottom edge, or top edge below the top bar (keyboard-position).
+        const top = this._atTop;
+        const topOffset = top ? this._topBarOffset(monitor) : 0;
+        if (top)
+            this._container.add_style_class_name('tosk-container-top');
+        else
+            this._container.remove_style_class_name('tosk-container-top');
+        this._container.set_position(monitor.x,
+            top ? monitor.y + topOffset : monitor.y + monitor.height - height);
+        this._workArea.setTopOffset(topOffset);
+        this._keyboard.setSwipeDirection(top ? -1 : 1);
         if (thumb)
             this._layoutThumbHalves(monitor.width);
         if (!this._visible)
-            this._container.translation_y = height;
+            this._container.translation_y = this._hiddenTranslation();
     }
 
     // Thumb mode: background panels behind the two halves (visual only; the keyboard
@@ -342,9 +426,10 @@ export default class TabletOskExtension extends Extension {
     _layoutThumbHalves(width) {
         const kb = this._keyboard;
         const pad = kb._pad, gap = kb._gap;
-        const unit = (width - 2 * pad + gap) / SPLIT_TOTAL_UNITS;
-        const leftEnd = pad + Math.round(SPLIT_LEFT_UNITS * unit) - gap;
-        const rightStart = pad + Math.round((SPLIT_LEFT_UNITS + SPLIT_GAP_UNITS) * unit);
+        const split = kb.splitGeometry; // classic or (narrower) touch thumb grid
+        const unit = (width - 2 * pad + gap) / split.total;
+        const leftEnd = pad + Math.round(split.left * unit) - gap;
+        const rightStart = pad + Math.round((split.left + split.gap) * unit);
         const [left, right] = this._thumbHalves;
         left.width = leftEnd + pad;
         right.width = width - rightStart + pad;
@@ -399,10 +484,24 @@ export default class TabletOskExtension extends Extension {
             parent.set_child_above_sibling(this._container, null);
     }
 
+    // A fullscreen window is scanned out directly (unredirected); the shell's chrome,
+    // including the keyboard, is then not painted. Like the built-in OSK, keep the
+    // compositor painting while the keyboard is on screen.
+    _setUnredirectBlocked(blocked) {
+        if (!!this._unredirectBlocked === blocked)
+            return;
+        this._unredirectBlocked = blocked;
+        if (blocked)
+            global.compositor.disable_unredirect();
+        else
+            global.compositor.enable_unredirect();
+    }
+
     _show() {
         if (!this._container || this._visible)
             return;
         this._visible = true;
+        this._setUnredirectBlocked(true);
         this._relayout();
         const c = this._container;
         c.remove_all_transitions();
@@ -424,8 +523,9 @@ export default class TabletOskExtension extends Extension {
             return;
         }
 
-        c.translation_y = c.height;
-        this._dockMover.moveAway();
+        c.translation_y = this._hiddenTranslation();
+        if (!this._atTop) // a bottom dock would be covered; at the top it can stay
+            this._dockMover.moveAway();
         c.show();
         this._raise();
         this._workArea.setShown(true);
@@ -439,6 +539,11 @@ export default class TabletOskExtension extends Extension {
     _hide() {
         if (!this._container || !this._visible)
             return;
+        if (this._isMini) {
+            // "T" is permanently shown (auto-hide, swipe, toggle are ignored); undo a swipe offset.
+            this._container.ease({translation_y: 0, duration: 120, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
+            return;
+        }
         this._visible = false;
         this._keyboard.resetModifiers();
         this._setPanelVisible(false);
@@ -449,6 +554,7 @@ export default class TabletOskExtension extends Extension {
         const done = () => {
             if (this._visible || !this._container)
                 return;
+            this._setUnredirectBlocked(false);
             c.hide();
             this._workArea.setShown(false);
             this._dockMover?.restore();
@@ -467,7 +573,7 @@ export default class TabletOskExtension extends Extension {
         }
 
         c.ease({
-            translation_y: c.height,
+            translation_y: this._hiddenTranslation(),
             duration: ANIMATION_TIME,
             mode: Clutter.AnimationMode.EASE_IN_QUAD,
             onStopped: done,
