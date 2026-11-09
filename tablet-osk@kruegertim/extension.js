@@ -243,13 +243,12 @@ export default class TabletOskExtension extends Extension {
         return this._settings.get_string('layout-style') === 'mini';
     }
 
-    // Mini: fixed panel width from the docked key size (6 units of 1.3 key heights).
+    // Mini: square panel; keys as high as docked keys, width = panel height.
     _miniWidth() {
         if (!this._isMini || !this._keyboard)
             return 0;
-        const keyPx = this._dockedKeyPx();
-        const pad = this._keyboard._pad ?? 4;
-        return Math.round(6 * keyPx * 1.3 + 2 * pad + 2);
+        this._keyboard.setKeyHeight(this._dockedKeyPx());
+        return Math.round(this._keyboard.preferredHeight);
     }
 
     _monitor() {
