@@ -47,6 +47,11 @@
     border-radius: 14px 14px 0 0;
 }
 
+/* keyboard docked at the top edge: rounded corners at the bottom */
+.tosk-container-top .tosk-thumb-half {
+    border-radius: 0 0 14px 14px;
+}
+
 .tosk-keyboard.tosk-thumb .tosk-suggest-bar {
     background-color: #262628;
     border-radius: 10px;

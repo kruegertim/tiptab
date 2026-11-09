@@ -337,6 +337,10 @@ export default class TabletOskExtension extends Extension {
         // Bottom edge, or top edge below the top bar (keyboard-position).
         const top = this._atTop;
         const topOffset = top ? this._topBarOffset(monitor) : 0;
+        if (top)
+            this._container.add_style_class_name('tosk-container-top');
+        else
+            this._container.remove_style_class_name('tosk-container-top');
         this._container.set_position(monitor.x,
             top ? monitor.y + topOffset : monitor.y + monitor.height - height);
         this._workArea.setTopOffset(topOffset);
