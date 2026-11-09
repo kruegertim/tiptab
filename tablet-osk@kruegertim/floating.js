@@ -22,7 +22,8 @@ export class FloatingController {
      *        called after the controller changed the container width/position; the coordinator
      *        recomputes key height for the new width and sets the container height.
      */
-    constructor({settings, container, getGrabActor, getResizeGrip, onGeometryChanged}) {
+    constructor({settings, container, getGrabActor, getResizeGrip, onGeometryChanged, getFixedWidth = null}) {
+        this._getFixedWidth = getFixedWidth; // () => px > 0: fixed panel width (mini style)
         this._settings = settings;
         this._container = container;
         this._getGrabActor = getGrabActor;
@@ -102,7 +103,7 @@ export class FloatingController {
         this._settings?.disconnectObject(this);
         this._settings = null;
         this._container = null;
-        this._getGrabActor = this._getResizeGrip = null;
+        this._getGrabActor = this._getResizeGrip = this._getFixedWidth = null;
         this._onGeometryChanged = null;
     }
 
@@ -131,12 +132,22 @@ export class FloatingController {
 
     _computeGeometry() {
         const {monitor, area} = this._areas();
-        return resolveGeometry({
+        const fixed = this._getFixedWidth?.() ?? 0;
+        const g = resolveGeometry({
             x: this._settings.get_int('floating-x'),
             y: this._settings.get_int('floating-y'),
-            width: this._settings.get_int('floating-width'),
+            width: fixed > 0 ? -1 : this._settings.get_int('floating-width'),
             height: this._container.height,
         }, monitor, area);
+        if (fixed > 0) {
+            // Narrower than the normal floating minimum: re-clamp with the fixed width.
+            const width = Math.min(fixed, area.width);
+            const x = this._settings.get_int('floating-x') < 0
+                ? Math.round(area.x + (area.width - width) / 2)
+                : g.x;
+            return clampRect({x, y: g.y, width, height: g.height}, area);
+        }
+        return g;
     }
 
     _apply(g) {

@@ -437,7 +437,8 @@ export class VisibilityController {
 
     _isFloating() {
         try {
-            return this._settings.get_string('mode') === 'floating';
+            return this._settings.get_string('mode') === 'floating' ||
+                this._settings.get_string('layout-style') === 'mini';
         } catch {
             return false;   // key not present
         }

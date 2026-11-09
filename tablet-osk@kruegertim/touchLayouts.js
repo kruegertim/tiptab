@@ -414,6 +414,19 @@ function emojiRows(cat, page, recent, split) {
     ];
 }
 
+// ---------------------------------------------------------------- mini ("T")
+
+// Small floating panel: ↑ ↓ F11, Strg+Alt+Shift(left)+R as one key, settings.
+export const MINI_TOTAL_UNITS = 6;
+
+export function getMiniLayout() {
+    return [[
+        up(), down(), sp('F11', 'F11', 'F11'),
+        sp('ComboCASR', 'Strg Alt ⇧ R', 'r', 2, {combo: ['Control_L', 'Alt_L', 'Shift_L']}),
+        settingsKey(1),
+    ]];
+}
+
 // ---------------------------------------------------------------- API
 
 export const TOUCH_LAYERS = ['abc', 'sym', 'sym2', 'sym3', 'emoji'];

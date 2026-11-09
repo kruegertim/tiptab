@@ -64,6 +64,7 @@ export default class TabletOskPreferences extends ExtensionPreferences {
         layoutGroup.add(comboRow(window, settings, 'layout-style', 'Tastenanordnung', [
             ['classic', 'Klassisch (ThinkPad, 5–6 Reihen)'],
             ['touch', 'Touch (4 Reihen, &123-Ebene, Emoji; nach Windows 11)'],
+            ['mini', 'T (kleines schwebendes Feld: ↑ ↓ F11 Strg+Alt+⇧+R ⚙)'],
         ]));
         layoutGroup.add(switchRow(settings, 'auto-capitalize', 'Satzanfang groß',
             'Nur Touch: nach . ! ? und Enter beginnt das nächste Wort groß'));
