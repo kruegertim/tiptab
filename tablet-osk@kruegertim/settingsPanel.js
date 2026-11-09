@@ -172,6 +172,7 @@ export const SettingsPanel = GObject.registerClass({
             'changed::keep-key-aspect', () => this._syncSwitch(this._aspectSwitch, 'keep-key-aspect'),
             'changed::floating-opacity', () => this._syncOpacity(),
             'changed::docked-width', () => this._syncDockedWidth(),
+            'changed::keyboard-position', () => this._posSeg.setActive(this._settings.get_string('keyboard-position')),
             'changed::label-brightness', () => this._syncBrightness(),
             'changed::key-glow', () => this._syncGlow(),
             'changed::key-glow-width', () => this._syncGlowWidth(),
@@ -345,6 +346,14 @@ export const SettingsPanel = GObject.registerClass({
         this._aspectSwitch = this._switch('keep-key-aspect');
         r.aspect = this._row('Proportionen beibehalten', this._aspectSwitch);
 
+        // Position: unten / oben (angedockt und Daumen)
+        {
+            const seg = this._segmented([['bottom', 'Unten'], ['top', 'Oben']],
+                id => this._settings.set_string('keyboard-position', id));
+            this._posSeg = seg;
+            r.position = this._row('Position', seg.actor);
+        }
+
         // Breite (angedockt)
         {
             const {row, valueLabel, slider} = this._sliderRow('Breite (angedockt)', null);
@@ -513,14 +522,14 @@ export const SettingsPanel = GObject.registerClass({
 
         this._rows = r;
         // single-column order (contract order) and two-column order (left | right)
-        this._order1 = [r.keyHeight, r.aspect, r.mode, r.style, r.fRow, r.layout, r.autoCap, r.dockedWidth, r.shrink, r.auto, r.submit,
+        this._order1 = [r.keyHeight, r.aspect, r.mode, r.style, r.fRow, r.layout, r.autoCap, r.position, r.dockedWidth, r.shrink, r.auto, r.submit,
             r.dock, r.opacity, r.brightness, r.glow, r.glowWidth, r.flash, r.letterCase, r.superSym, r.holdRelease,
             r.holdMs, r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict];
         this._order2 = [
             [r.keyHeight, r.aspect, r.layout, r.fRow, r.brightness, r.glow, r.glowWidth, r.flash,
                 r.letterCase, r.auto, r.submit, r.superSym, r.holdRelease,
                 r.holdMs],
-            [r.mode, r.style, r.autoCap, r.dockedWidth, r.shrink, r.opacity, r.dock,
+            [r.mode, r.style, r.autoCap, r.position, r.dockedWidth, r.shrink, r.opacity, r.dock,
                 r.predictHeader, r.suggest, r.barPos, r.autocorrect, r.hitareas, r.language, r.clearDict],
         ];
 
@@ -1003,6 +1012,7 @@ export const SettingsPanel = GObject.registerClass({
         this._setRowSensitive(this._rows.shrink, this._shrinkSwitch, !floating);
         this._setRowSensitive(this._rows.opacity, this._opSlider, floating);
         this._setRowSensitive(this._rows.dockedWidth, this._dwSlider, mode === 'docked');
+        this._setRowSensitive(this._rows.position, this._posSeg.actor, !floating);
     }
 
     _setRowSensitive(row, control, sensitive) {
@@ -1027,6 +1037,7 @@ export const SettingsPanel = GObject.registerClass({
         this._syncSwitch(this._aspectSwitch, 'keep-key-aspect');
         this._syncOpacity();
         this._syncDockedWidth();
+        this._posSeg.setActive(this._settings.get_string('keyboard-position'));
         this._syncBrightness();
         this._syncGlow();
         this._syncGlowWidth();

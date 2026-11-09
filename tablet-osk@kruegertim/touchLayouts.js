@@ -25,9 +25,11 @@ export const TOUCH_TOTAL_UNITS = 14.25;
 // Thumb mode in the touch style: the halves are 75 % as wide as in the classic split
 // (same 7 u + 8.5 u halves, narrower keys), so the grid is 22.5 / 0.75 = 30 u and the
 // free middle grows to 14.5 u.
+// The two inner letter columns appear on both halves (left Q…Z, right T…P), so the halves
+// are 8 u and 9.5 u and the free middle is 12.5 u.
 export const TOUCH_SPLIT_TOTAL_UNITS = 30;
-export const TOUCH_SPLIT_LEFT_UNITS = 7;
-export const TOUCH_SPLIT_GAP_UNITS = 14.5;
+export const TOUCH_SPLIT_LEFT_UNITS = 8;
+export const TOUCH_SPLIT_GAP_UNITS = 12.5;
 const SPLIT_GAP_UNITS = TOUCH_SPLIT_GAP_UNITS;
 
 // ---------------------------------------------------------------- alternatives
@@ -157,7 +159,7 @@ function upDown() {
 function abcBottom(split) {
     if (split) {
         return [layerKey('SymLayer', '&123', 'sym', 1.5), ctrl(1.25), emojiKey(1),
-            space('space', 3.25), gap(), space('space_r', 3), left(), up(), down(), right(), settingsKey(1.5)];
+            space('space', 4.25), gap(), space('space_r', 4), left(), up(), down(), right(), settingsKey(1.5)];
     }
     // No hide key here: swipe down hides the keyboard. Arrows as an inverted T: ↑ sits in
     // the Shift row above ↓ (see shiftRowTail()).
@@ -172,12 +174,14 @@ function shiftRowTail() {
 
 function abcQwertz(split) {
     if (split) {
-        // left: Q at 1.25, A at 1.5, Y at 2 (real stagger 0.25 / 0.5); right: Z, H, N likewise
-        const r1 = topRow('qwertzuiopü');
+        // left: Q at 1.25, A at 1.5, Y at 2 (real stagger 0.25 / 0.5); right: T, G, B likewise.
+        // The two inner columns are on both halves: left Q…Z / A…H / Y…N, right T…Ü / G…Ä / B…-.
+        const top = topRow('qwertzuiopü');
+        const topR = topRow('qwertzuiopü');
         return [
-            [esc(1.25), ...r1.slice(0, 5), pad(0.75), gap(), ...r1.slice(5), backspace(2.5)],
-            [question(1.5), ...chars('asdfg'), pad(0.5), gap(), pad(0.25), ...chars('hjklöä'), enter(2.25)],
-            [shift('Shift', 2), ...chars('yxcvb'), gap(), pad(0.75), ...chars('nm,.-'), shift('Shift_R', 2.75)],
+            [esc(1.25), ...top.slice(0, 6), pad(0.75), gap(), ...topR.slice(4), backspace(2.5)],
+            [question(1.5), ...chars('asdfgh'), pad(0.5), gap(), pad(0.25), ...chars('ghjklöä'), enter(2.25)],
+            [shift('Shift', 2), ...chars('yxcvbn'), gap(), pad(0.75), ...chars('bnm,.-'), shift('Shift_R', 2.75)],
             abcBottom(true),
         ];
     }
@@ -191,12 +195,13 @@ function abcQwertz(split) {
 
 function abcQwerty(split) {
     if (split) {
-        const r1 = topRow('qwertyuiop');
+        const top = topRow('qwertyuiop');
+        const topR = topRow('qwertyuiop');
         return [
-            [esc(1.25), ...r1.slice(0, 5), pad(0.75), gap(), ...r1.slice(5), ch('-', {shift: '_'}), backspace(2.5)],
-            [question(1.5), ...chars('asdfg'), pad(0.5), gap(), pad(0.25), ...chars('hjkl'),
+            [esc(1.25), ...top.slice(0, 6), pad(0.75), gap(), ...topR.slice(4), ch('-', {shift: '_'}), backspace(2.5)],
+            [question(1.5), ...chars('asdfgh'), pad(0.5), gap(), pad(0.25), ...chars('ghjkl'),
                 ch(';', {shift: ':'}), ch('\'', {shift: '"'}), enter(2.25)],
-            [shift('Shift', 2), ...chars('zxcvb'), gap(), pad(0.75), ...chars('nm,.'), ch('/', {shift: '?'}),
+            [shift('Shift', 2), ...chars('zxcvbn'), gap(), pad(0.75), ...chars('bnm,.'), ch('/', {shift: '?'}),
                 shift('Shift_R', 2.75)],
             abcBottom(true),
         ];
@@ -420,13 +425,31 @@ export const TOUCH_LAYERS = ['abc', 'sym', 'sym2', 'sym3', 'emoji'];
  */
 export function getTouchLayout({layout = 'qwertz', layer = 'abc', split = false, emojiCat = 1, emojiPage = 0,
     recentEmoji = []} = {}) {
+    let rows;
     switch (layer) {
-    case 'sym': return sym1(split);
-    case 'sym2': return sym2(split);
-    case 'sym3': return sym3(split);
-    case 'emoji': return emojiRows(emojiCat, emojiPage, recentEmoji, split);
+    case 'sym': rows = sym1(split); break;
+    case 'sym2': rows = sym2(split); break;
+    case 'sym3': rows = sym3(split); break;
+    case 'emoji': rows = emojiRows(emojiCat, emojiPage, recentEmoji, split); break;
     default: return layout === 'qwerty' ? abcQwerty(split) : abcQwertz(split);
     }
+    return split ? widenSplitHalves(rows) : rows;
+}
+
+// The symbol and emoji split layers are designed for 7 u + 8.5 u halves; widen them to the
+// 8 u + 9.5 u halves of the letter layer (outer keys +1 u, emoji rows get an inner pad).
+function widenSplitHalves(rows) {
+    return rows.map(row => {
+        const out = [...row];
+        const gapIdx = out.findIndex(k => k.id === 'split-gap');
+        if (out[0].emoji)
+            out.splice(gapIdx, 0, pad(1));
+        else
+            out[0] = {...out[0], w: out[0].w + 1};
+        const last = out.length - 1;
+        out[last] = {...out[last], w: out[last].w + 1};
+        return out;
+    });
 }
 
 export function rowUnits(row) {

@@ -764,6 +764,7 @@ export const OskKeyboard = GObject.registerClass({
         this._emojiPage = 0;
         this._recentText = '';
         this._layerIdleId = 0;
+        this._swipeDir = 1; // -1: keyboard at the top edge, swipe up hides
         this._noopTarget = {down() {}, up() {}, cancel() {}};
 
         this._keys = [];
@@ -985,6 +986,11 @@ export const OskKeyboard = GObject.registerClass({
      */
     setPickSpans(spans) {
         this._pickSpans = spans ?? null;
+    }
+
+    /** 1: swipe down hides (keyboard at the bottom), -1: swipe up hides (at the top). */
+    setSwipeDirection(dir) {
+        this._swipeDir = dir < 0 ? -1 : 1;
     }
 
     /** Docked narrow mode: extra horizontal inset (px) on both sides of the keys. */
@@ -1477,13 +1483,14 @@ export const OskKeyboard = GObject.registerClass({
         if (this._trackTouchGestures(st))
             return;
         if (st.swiping) {
-            this.emit('swipe-progress', Math.max(0, st.y - st.y0));
+            this.emit('swipe-progress', Math.max(0, (st.y - st.y0) * this._swipeDir));
             return;
         }
         if (!this._swipeEnabled())
             return;
         const kh = this._keyHeight;
-        const dx = st.x - st.x0, dy = st.y - st.y0;
+        // dy > 0 = towards the screen edge the keyboard is docked at (down, or up at the top)
+        const dx = st.x - st.x0, dy = (st.y - st.y0) * this._swipeDir;
         const vertical = dy > 2 * Math.abs(dx);
         if (!st.candidate) {
             // Only a lone finger can swipe: a held modifier (or any other finger)
@@ -1504,7 +1511,7 @@ export const OskKeyboard = GObject.registerClass({
 
     _finishSeq(st) {
         if (st.swiping) {
-            if (st.y - st.y0 > this._keyHeight * SWIPE_COMMIT)
+            if ((st.y - st.y0) * this._swipeDir > this._keyHeight * SWIPE_COMMIT)
                 this.emit('swipe-hide');
             else
                 this.emit('swipe-cancel');

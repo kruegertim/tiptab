@@ -110,6 +110,11 @@ export default class TabletOskPreferences extends ExtensionPreferences {
             'Fenster machen der Tastatur Platz, statt verdeckt zu werden (nur angedockt)');
         modeGroup.add(shrinkRow);
 
+        modeGroup.add(comboRow(window, settings, 'keyboard-position', 'Position', [
+            ['bottom', 'Unten'],
+            ['top', 'Oben (unter der oberen Leiste)'],
+        ], 'Angedockt und Daumen-Modus'));
+
         const widthRow = new Adw.SpinRow({
             title: 'Breite angedockt (%)',
             subtitle: 'Gesamtbreite der angedockten Tastatur, zentriert (schmalere Tasten)',
